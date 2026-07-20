@@ -116,21 +116,20 @@ function FileIcon({ file, size = 20 }: { file: FileItem; size?: number }) {
 function parseLsOutput(output: string): FileItem[] {
   const lines = output.split('\n').filter(l => l.trim())
   const files: FileItem[] = []
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i]
+  for (const line of lines) {
     const parts = line.trim().split(/\s+/)
-    if (parts.length < 8) continue
+    if (parts.length < 7) continue
     const permStr = parts[0]
+    if (!/^[dlsbcp-]/.test(permStr)) continue
     const ownerName = parts[2]
     const groupName = parts[3]
     const sizeStr = parts[4]
-    const datePart1 = parts[5]
-    const datePart2 = parts[6]
-    const datePart3 = parts[7]
-    const nameParts = parts.slice(8)
+    const modifiedStr = parts[5]
+    const nameParts = parts.slice(6)
     let name = nameParts.join(' ')
-    if (!name && parts.length === 8) {
-      name = datePart3
+    if (permStr.startsWith('l')) {
+      const linkSeparator = name.indexOf(' -> ')
+      if (linkSeparator >= 0) name = name.slice(0, linkSeparator)
     }
     if (name === '.' || name === '..') continue
     let type: FileItem['type'] = 'file'
@@ -138,14 +137,7 @@ function parseLsOutput(output: string): FileItem[] {
     else if (permStr.startsWith('l')) type = 'symlink'
     const permissions = permStr
     const size = parseInt(sizeStr, 10) || 0
-    let modified = 0
-    const combined = `${datePart1} ${datePart2} ${datePart3}`
-    if (/^\d+$/.test(datePart1)) {
-      modified = parseInt(datePart1, 10)
-    } else {
-      const d = new Date(combined)
-      if (!isNaN(d.getTime())) modified = Math.floor(d.getTime() / 1000)
-    }
+    const modified = parseInt(modifiedStr, 10) || 0
     files.push({ name, type, size, modified, permissions, owner: ownerName, group: groupName })
   }
   return files
