@@ -52,7 +52,16 @@ function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`
   if (bytes < 1073741824) return `${(bytes / 1048576).toFixed(1)} MB`
-  return `${(bytes / 1073741824).toFixed(2)} GB`
+  if (bytes < 1099511627776) return `${(bytes / 1073741824).toFixed(2)} GB`
+  return `${(bytes / 1099511627776).toFixed(2)} TB`
+}
+
+function decodeBase64Text(output: string): string {
+  const value = output.replace(/\s/g, '')
+  if (!value || value.startsWith('ERROR:')) throw new Error('服务器无法读取该文件')
+  const binary = atob(value)
+  const bytes = Uint8Array.from(binary, char => char.charCodeAt(0))
+  return new TextDecoder().decode(bytes)
 }
 
 function formatDateFull(ts: number): string {
@@ -236,6 +245,8 @@ export default function FilesPage() {
   const fileLoadVersionRef = useRef({ left: 0, right: 0 })
   const compressTargetRef = useRef<{ file: FileItem; pane: 'left' | 'right' } | null>(null)
   const touchScaleRef = useRef<{ dist: number; scale: number } | null>(null)
+  const imageScaleFrameRef = useRef<number | null>(null)
+  const pendingImageScaleRef = useRef(1)
 
   const [activeTab, setActiveTab] = useState(paramId || '')
   const [activePane, setActivePane] = useState<'left' | 'right'>('left')
@@ -333,7 +344,10 @@ export default function FilesPage() {
   const [rightBackStack, setRightBackStack] = useState<string[]>([])
   const [showToast_local, setShowToast_local] = useState<string | null>(null)
 
-  const activeServer = servers.find(s => s.id === activeTab)
+  const activeServerId = activePane === 'left' ? activeTab : rightServerId
+  const activeServer = servers.find(s => s.id === activeServerId)
+  const leftConnected = Boolean(activeTab && isConnected(activeTab))
+  const rightConnected = Boolean(rightServerId && isConnected(rightServerId))
   const connectedServers = servers.filter(s => isConnected(s.id))
   const drawerServers = servers.filter(server => {
     const query = serverSearch.trim().toLowerCase()
@@ -517,8 +531,8 @@ export default function FilesPage() {
     const filePath = state.currentPath + '/' + file.name
     if (file.size > LARGE_FILE_CHUNK_BYTES * 2) {
       try {
-        const output = await execCommand(serverId, `base64 ${JSON.stringify(filePath)} 2>/dev/null | head -c $(( ${Math.ceil(LARGE_FILE_CHUNK_BYTES / 3) * 4} ))`)
-        const content = atob(output.replace(/\s/g, ''))
+        const output = await execCommand(serverId, `base64 ${JSON.stringify(filePath)} 2>/dev/null | tr -d '\n' | head -c $(( ${Math.ceil(LARGE_FILE_CHUNK_BYTES / 3) * 4} ))`)
+        const content = decodeBase64Text(output)
         const lines = content.split('\n')
         const truncated = lines.slice(0, 200).join('\n')
         editorChunkOffsetRef.current = 0
@@ -530,8 +544,8 @@ export default function FilesPage() {
       }
     } else if (file.size > LARGE_FILE_CHUNK_BYTES) {
       try {
-        const output = await execCommand(serverId, `base64 -w0 ${JSON.stringify(filePath)} 2>/dev/null | head -c $(( ${Math.ceil(LARGE_FILE_CHUNK_BYTES / 3) * 4} ))`)
-        const content = atob(output.replace(/\s/g, ''))
+        const output = await execCommand(serverId, `base64 ${JSON.stringify(filePath)} 2>/dev/null | tr -d '\n' | head -c $(( ${Math.ceil(LARGE_FILE_CHUNK_BYTES / 3) * 4} ))`)
+        const content = decodeBase64Text(output)
         editorChunkOffsetRef.current = 0
         editorFilePathRef.current = filePath
         editorServerIdRef.current = serverId
@@ -542,8 +556,8 @@ export default function FilesPage() {
       }
     } else {
       try {
-        const output = await execCommand(serverId, `base64 -w0 ${JSON.stringify(filePath)} 2>/dev/null`)
-        const content = atob(output.replace(/\s/g, ''))
+        const output = await execCommand(serverId, `base64 ${JSON.stringify(filePath)} 2>/dev/null`)
+        const content = decodeBase64Text(output)
         editorChunkOffsetRef.current = 0
         editorFilePathRef.current = filePath
         editorServerIdRef.current = serverId
@@ -562,8 +576,8 @@ export default function FilesPage() {
     try {
       const byteOffset = newOffset
       
-      const output = await execCommand(serverId, `dd if=${JSON.stringify(filePath)} bs=1 skip=${byteOffset} count=${LARGE_FILE_CHUNK_BYTES} 2>/dev/null | base64 -w0`)
-      const content = atob(output.replace(/\s/g, ''))
+      const output = await execCommand(serverId, `dd if=${JSON.stringify(filePath)} bs=1 skip=${byteOffset} count=${LARGE_FILE_CHUNK_BYTES} 2>/dev/null | base64`)
+      const content = decodeBase64Text(output)
       editorChunkOffsetRef.current = byteOffset
       chunkPagesRef.current.set(0, { offset: byteOffset, firstLine: 1 })
       setEditingFile((prev: any) => prev ? { ...prev, content, chunkOffset: byteOffset } : null)
@@ -594,7 +608,7 @@ export default function FilesPage() {
     setImageLoading(true)
     setImageViewer({ name: file.name, serverId, path: state.currentPath + '/' + file.name, file, pane })
     try {
-      const output = await execCommand(serverId, `base64 -w0 ${JSON.stringify(state.currentPath + '/' + file.name)} 2>/dev/null`)
+      const output = await execCommand(serverId, `base64 ${JSON.stringify(state.currentPath + '/' + file.name)} 2>/dev/null`)
       const binary = atob(output.replace(/\s/g, ''))
       const bytes = new Uint8Array(binary.length)
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
@@ -639,6 +653,15 @@ export default function FilesPage() {
       const prevZoom = parseFloat(el.dataset['pinchZoom'] || '1')
       setImageZoom(Math.max(0.5, Math.min(5, prevZoom * (dist / prevDist))))
     }
+  }
+
+  const scheduleImageScale = (nextScale: number) => {
+    pendingImageScaleRef.current = Math.max(0.5, Math.min(5, nextScale))
+    if (imageScaleFrameRef.current !== null) return
+    imageScaleFrameRef.current = requestAnimationFrame(() => {
+      imageScaleFrameRef.current = null
+      setScale(pendingImageScaleRef.current)
+    })
   }
 
   function getArchiveListCommand(archiveName: string): string | null {
@@ -1223,10 +1246,10 @@ export default function FilesPage() {
           className={`relative flex min-w-0 flex-1 flex-col ${activePane === 'left' ? '' : 'bg-[#fcfcfd]'}`}
         >
           <div className="flex h-[58px] shrink-0 items-center gap-1.5 px-3">
-            <button onClick={() => { setNewFileType('file'); setNewFileName(''); setNewFileDialogOpen(true) }} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#eef0f5] bg-[#f7f6fb] text-[#bfc6d8] shadow-sm"><FileText size={16} strokeWidth={1.7} /></button>
-            <button onClick={() => { setNewFileType('folder'); setNewFileName(''); setNewFileDialogOpen(true) }} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#edf1f3] bg-[#f4fbfd] text-[#a6dce8] shadow-sm"><FolderPlus size={16} strokeWidth={1.7} /></button>
-            <button onClick={() => handleUploadClick('left')} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#edf1f7] bg-[#f5f9ff] text-[#9ab8f3] shadow-sm"><Upload size={16} strokeWidth={1.7} /></button>
-            <button onClick={() => handleUploadClick('left', true)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#f0eef8] bg-[#f8f5ff] text-[#c7b6f4] shadow-sm"><FolderUp size={16} strokeWidth={1.7} /></button>
+            <button disabled={!leftConnected} onClick={() => { setActivePane('left'); setNewFileType('file'); setNewFileName(''); setNewFileDialogOpen(true) }} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#eef0f5] bg-[#f7f6fb] text-[#bfc6d8] shadow-sm disabled:cursor-not-allowed disabled:border-[#edf0f4] disabled:bg-[#f5f6f8] disabled:text-[#c5cbd5] disabled:shadow-none"><FileText size={16} strokeWidth={1.7} /></button>
+            <button disabled={!leftConnected} onClick={() => { setActivePane('left'); setNewFileType('folder'); setNewFileName(''); setNewFileDialogOpen(true) }} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#edf1f3] bg-[#f4fbfd] text-[#a6dce8] shadow-sm disabled:cursor-not-allowed disabled:border-[#edf0f4] disabled:bg-[#f5f6f8] disabled:text-[#c5cbd5] disabled:shadow-none"><FolderPlus size={16} strokeWidth={1.7} /></button>
+            <button disabled={!leftConnected} onClick={() => handleUploadClick('left')} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#edf1f7] bg-[#f5f9ff] text-[#9ab8f3] shadow-sm disabled:cursor-not-allowed disabled:border-[#edf0f4] disabled:bg-[#f5f6f8] disabled:text-[#c5cbd5] disabled:shadow-none"><Upload size={16} strokeWidth={1.7} /></button>
+            <button disabled={!leftConnected} onClick={() => handleUploadClick('left', true)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#f0eef8] bg-[#f8f5ff] text-[#c7b6f4] shadow-sm disabled:cursor-not-allowed disabled:border-[#edf0f4] disabled:bg-[#f5f6f8] disabled:text-[#c5cbd5] disabled:shadow-none"><FolderUp size={16} strokeWidth={1.7} /></button>
           </div>
 
           <div className="flex-1 overflow-y-auto px-2 pb-3 pt-1">
@@ -1281,7 +1304,7 @@ export default function FilesPage() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm text-gray-800 truncate">{file.name}</p>
-                    <p className="text-[10px] text-gray-400">{file.size}{file.modified ? ' · ' + fmtTime(file.modified) : ''}</p>
+                    <p className="text-[10px] text-gray-400">{formatSize(file.size)}{file.modified ? ' · ' + fmtTime(file.modified) : ''}</p>
                   </div>
                   {selectedNames.includes(file.name) && <Check size={14} className="text-blue-500 shrink-0" />}
                 </div>
@@ -1297,10 +1320,10 @@ export default function FilesPage() {
           className={`relative flex min-w-0 flex-1 flex-col ${activePane === 'right' ? '' : 'bg-[#fcfcfd]'}`}
         >
           <div className="flex h-[58px] shrink-0 items-center gap-1.5 px-3">
-            <button onClick={() => { setNewFileType('file'); setNewFileName(''); setNewFileDialogOpen(true) }} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#eef0f5] bg-[#f7f6fb] text-[#bfc6d8] shadow-sm"><FileText size={16} strokeWidth={1.7} /></button>
-            <button onClick={() => { setNewFileType('folder'); setNewFileName(''); setNewFileDialogOpen(true) }} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#edf1f3] bg-[#f4fbfd] text-[#a6dce8] shadow-sm"><FolderPlus size={16} strokeWidth={1.7} /></button>
-            <button onClick={() => handleUploadClick('right')} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#edf1f7] bg-[#f5f9ff] text-[#9ab8f3] shadow-sm"><Upload size={16} strokeWidth={1.7} /></button>
-            <button onClick={() => handleUploadClick('right', true)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#f0eef8] bg-[#f8f5ff] text-[#c7b6f4] shadow-sm"><FolderUp size={16} strokeWidth={1.7} /></button>
+            <button disabled={!rightConnected} onClick={() => { setActivePane('right'); setNewFileType('file'); setNewFileName(''); setNewFileDialogOpen(true) }} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#eef0f5] bg-[#f7f6fb] text-[#bfc6d8] shadow-sm disabled:cursor-not-allowed disabled:border-[#edf0f4] disabled:bg-[#f5f6f8] disabled:text-[#c5cbd5] disabled:shadow-none"><FileText size={16} strokeWidth={1.7} /></button>
+            <button disabled={!rightConnected} onClick={() => { setActivePane('right'); setNewFileType('folder'); setNewFileName(''); setNewFileDialogOpen(true) }} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#edf1f3] bg-[#f4fbfd] text-[#a6dce8] shadow-sm disabled:cursor-not-allowed disabled:border-[#edf0f4] disabled:bg-[#f5f6f8] disabled:text-[#c5cbd5] disabled:shadow-none"><FolderPlus size={16} strokeWidth={1.7} /></button>
+            <button disabled={!rightConnected} onClick={() => handleUploadClick('right')} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#edf1f7] bg-[#f5f9ff] text-[#9ab8f3] shadow-sm disabled:cursor-not-allowed disabled:border-[#edf0f4] disabled:bg-[#f5f6f8] disabled:text-[#c5cbd5] disabled:shadow-none"><Upload size={16} strokeWidth={1.7} /></button>
+            <button disabled={!rightConnected} onClick={() => handleUploadClick('right', true)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#f0eef8] bg-[#f8f5ff] text-[#c7b6f4] shadow-sm disabled:cursor-not-allowed disabled:border-[#edf0f4] disabled:bg-[#f5f6f8] disabled:text-[#c5cbd5] disabled:shadow-none"><FolderUp size={16} strokeWidth={1.7} /></button>
           </div>
 
           <div className="flex-1 overflow-y-auto px-2 pb-3 pt-1">
@@ -1359,7 +1382,7 @@ export default function FilesPage() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm text-gray-800 truncate">{file.name}</p>
-                    <p className="text-[10px] text-gray-400">{file.size}{file.modified ? ' · ' + fmtTime(file.modified) : ''}</p>
+                    <p className="text-[10px] text-gray-400">{formatSize(file.size)}{file.modified ? ' · ' + fmtTime(file.modified) : ''}</p>
                   </div>
                   {selectedNames.includes(file.name) && <Check size={14} className="text-blue-500 shrink-0" />}
                 </div>
@@ -1662,8 +1685,8 @@ export default function FilesPage() {
 
       {/* 图片查看器 */}
       {imageViewer && (
-        <div className="fixed inset-0 z-[2000] bg-black/95 flex flex-col">
-          <div className="absolute top-4 left-4 right-4 z-10 flex items-center justify-between">
+        <div className="fixed inset-0 z-[2000] flex flex-col bg-black/95 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+          <div className="z-10 flex shrink-0 items-center justify-between px-4 py-3">
             <div className="flex items-center gap-2">
               <button onClick={() => setScale(Math.max(0.5, scale - 0.25))} className="p-2 rounded-lg bg-white/10 text-white"><Minus size={16} /></button>
               <span className="text-white text-xs w-12 text-center">{Math.round(scale * 100)}%</span>
@@ -1672,15 +1695,16 @@ export default function FilesPage() {
             </div>
             <div className="flex items-center gap-2">
               <button onClick={handleDownloadFile} className="p-2 rounded-lg bg-white/10 text-white"><Download size={18} /></button>
-              <button onClick={() => { setImageViewer(null); setScale(1) }} className="p-2 rounded-lg bg-white/10 text-white"><X size={18} /></button>
+              <button onClick={_closeImageViewer} className="p-2 rounded-lg bg-white/10 text-white"><X size={18} /></button>
             </div>
           </div>
-          <div className="flex-1 flex items-center justify-center overflow-hidden"
+          <div className="flex flex-1 touch-none items-center justify-center overflow-hidden"
             onWheel={e => { e.preventDefault(); setScale(prev => Math.min(5, Math.max(0.5, prev + (e.deltaY > 0 ? -0.1 : 0.1)))) }}
             onTouchStart={e => { if (e.touches.length === 2) touchScaleRef.current = { dist: Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY), scale } }}
-            onTouchMove={e => { if (e.touches.length === 2 && touchScaleRef.current) setScale(Math.min(5, Math.max(0.5, touchScaleRef.current.scale * Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY) / touchScaleRef.current.dist))) }}>
+            onTouchMove={e => { if (e.touches.length === 2 && touchScaleRef.current) { e.preventDefault(); scheduleImageScale(touchScaleRef.current.scale * Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY) / touchScaleRef.current.dist) } }}
+            onTouchEnd={() => { touchScaleRef.current = null }}>
             {imageLoading && <Loader2 size={32} className="animate-spin text-white absolute" />}
-            {imageData && <img src={imageData} alt={imageViewer.file.name} className="max-w-full max-h-full object-contain transition-transform duration-150"
+            {imageData && <img src={imageData} alt={imageViewer.file.name} className="max-w-full max-h-full object-contain will-change-transform"
               style={{ transform: `scale(${scale})` }} draggable={false}
               onError={() => { setImageLoading(false); setImageViewer(null); showToast('图片加载失败', 'error') }}
               onLoad={() => setImageLoading(false)} />}
@@ -1718,7 +1742,7 @@ export default function FilesPage() {
               <Row label="名称" value={propertySheet.file.name} />
               <Row label="目录" value={propertySheet.currentPath || '/'} mono />
               <Row label="类型" value={propertySheet.file.type === 'directory' ? '目录' : propertySheet.file.name.split('.').pop()?.toUpperCase() || '文件'} />
-              <Row label="大小" value={String(propertySheet.file.size)} />
+              <Row label="大小" value={formatSize(propertySheet.file.size)} />
               <Row label="修改时间" value={propertySheet.file.modified ? fmtTime(propertySheet.file.modified) : '-'} />
               <Row label="权限" value={propertySheet.file.permissions || '-'} mono />
               <Row label="所有者" value={propertySheet.file.owner || '-'} />
