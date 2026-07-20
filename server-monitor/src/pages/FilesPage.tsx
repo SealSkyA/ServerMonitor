@@ -410,11 +410,15 @@ export default function FilesPage() {
       : { state: rightState, setState: setRightState, serverId: rightServerId }
   }
 
-  const navigateTo = useCallback((path: string, pane: 'left' | 'right') => {
-    const { setState, serverId } = getPaneInfo(pane)
+  const navigateTo = useCallback((path: string, pane: 'left' | 'right', recordHistory = true) => {
+    const { state, setState, serverId } = getPaneInfo(pane)
     if (!serverId) return
     const key = pane === 'left' ? 'left' : 'right'
-    setForwardHistory(prev => ({ ...prev, [key]: [] }))
+    if (recordHistory && path !== state.currentPath) {
+      if (pane === 'left') setBackStack(prev => [...prev, state.currentPath])
+      else setRightBackStack(prev => [...prev, state.currentPath])
+      setForwardHistory(prev => ({ ...prev, [key]: [] }))
+    }
     loadFiles(serverId, path, (s) => { setState(s) })
     const recents = JSON.parse(localStorage.getItem('server-monitor-file-recents') || '[]') as { serverId: string; path: string; name: string }[]
     const name = path === '/' ? '/' : path.split('/').filter(Boolean).pop() || path
@@ -441,20 +445,22 @@ export default function FilesPage() {
     const stack = forwardHistory[key] || []
     if (stack.length === 0) return
     const target = stack[stack.length - 1]
-    setForwardHistory(prev => ({
-      ...prev,
-      [key]: prev[key].slice(0, -1)
-    }))
-    navigateTo(target, pane)
+    const currentPath = getPaneInfo(pane).state.currentPath
+    setForwardHistory(prev => ({ ...prev, [key]: prev[key].slice(0, -1) }))
+    if (pane === 'left') setBackStack(prev => [...prev, currentPath])
+    else setRightBackStack(prev => [...prev, currentPath])
+    navigateTo(target, pane, false)
   }, [forwardHistory, activeTab, rightServerId, showHidden, execCommand])
 
   const navigateBack = useCallback((pane: 'left' | 'right') => {
     const stack = pane === 'left' ? backStack : rightBackStack
     if (stack.length === 0) return
     const target = stack[stack.length - 1]
+    const currentPath = getPaneInfo(pane).state.currentPath
     if (pane === 'left') setBackStack(prev => prev.slice(0, -1))
     else setRightBackStack(prev => prev.slice(0, -1))
-    navigateTo(target, pane)
+    setForwardHistory(prev => ({ ...prev, [pane]: [...(prev[pane] || []), currentPath] }))
+    navigateTo(target, pane, false)
   }, [backStack, rightBackStack, activeTab, rightServerId, showHidden, execCommand])
 
   const handleDeleteFile = useCallback(async (file: FileItem, pane: 'left' | 'right') => {
@@ -1112,6 +1118,18 @@ export default function FilesPage() {
     navigateTo(tabState.currentPath, 'right' as 'left' | 'right')
   }, [rightServerId, tabState.currentPath, activeTab, showHidden, execCommand])
 
+  const syncActivePaneToOtherPane = useCallback(() => {
+    if (activePane === 'left') {
+      if (!activeTab) return
+      setRightServerId(activeTab)
+      loadFiles(activeTab, tabState.currentPath, setRightState)
+      return
+    }
+    if (!rightServerId) return
+    setActiveTab(rightServerId)
+    loadFiles(rightServerId, rightState.currentPath, setTabState)
+  }, [activePane, activeTab, rightServerId, tabState.currentPath, rightState.currentPath, showHidden, execCommand])
+
 
   const fmtTime = (ts: number) => {
     if (!ts) return ''
@@ -1352,23 +1370,26 @@ export default function FilesPage() {
       </main>
 
       <footer className="flex h-[96px] shrink-0 items-center justify-between border-t border-[#e6e9f0] bg-white px-8">
-        <button onClick={() => navigateBack(activePane)}
-          disabled={(activePane === 'left' ? backStack : rightBackStack).length === 0}
-          className="flex h-12 w-12 items-center justify-center rounded-xl text-[#d3d7e1] active:bg-[#f3f5f8] disabled:opacity-70">
-          <ArrowLeft size={26} strokeWidth={2} />
-        </button>
         <button onClick={() => navigateForward(activePane)}
           disabled={!(forwardHistory[activePane]?.length > 0)}
           className="flex h-12 w-12 items-center justify-center rounded-xl text-[#d3d7e1] active:bg-[#f3f5f8] disabled:opacity-70">
-          <ArrowRight size={26} strokeWidth={2} />
+          <ChevronLeft size={28} strokeWidth={2.2} />
+        </button>
+        <button onClick={() => navigateBack(activePane)}
+          disabled={(activePane === 'left' ? backStack : rightBackStack).length === 0}
+          className="flex h-12 w-12 items-center justify-center rounded-xl text-[#d3d7e1] active:bg-[#f3f5f8] disabled:opacity-70">
+          <ChevronRight size={28} strokeWidth={2.2} />
         </button>
         <button onClick={() => { setNewFileDialogOpen(true); setNewFileName(''); setNewFileType('file') }}
           className="flex h-12 w-12 items-center justify-center rounded-xl text-[#68738a] active:bg-[#f3f5f8]">
           <Plus size={31} strokeWidth={2} />
         </button>
-        <button onClick={() => { if (activeTab) { loadFiles(activeTab, tabState.currentPath, setTabState); if (rightServerId) loadFiles(rightServerId, rightState.currentPath, setRightState) } }}
-          className="flex h-12 w-12 items-center justify-center rounded-xl text-[#8c96a8] active:bg-[#f3f5f8]">
-          <RefreshCw size={24} strokeWidth={1.9} />
+        <button onClick={syncActivePaneToOtherPane}
+          disabled={activePane === 'left' ? !activeTab : !rightServerId}
+          aria-label="同步当前目录到另一面板"
+          className="flex h-12 w-12 items-center justify-center gap-0.5 rounded-xl active:bg-[#f3f5f8] disabled:opacity-40">
+          <ArrowLeft size={19} strokeWidth={2.2} className={activePane === 'right' ? 'text-[#68738a]' : 'text-[#d3d7e1]'} />
+          <ArrowRight size={19} strokeWidth={2.2} className={activePane === 'left' ? 'text-[#68738a]' : 'text-[#d3d7e1]'} />
         </button>
         <button onClick={() => navigateToParent(activePane)}
           className="flex h-12 w-12 items-center justify-center rounded-xl text-[#8c96a8] active:bg-[#f3f5f8]">
