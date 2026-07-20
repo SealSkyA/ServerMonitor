@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from 'react-router-dom'
-import { useRef } from 'react'
+import { useRef, type TouchEvent } from 'react'
 import { Server, Terminal, FolderOpen, Settings } from 'lucide-react'
 
 const tabs = [
@@ -12,6 +12,7 @@ const tabs = [
 export default function BottomNav({ hidden = false }: { hidden?: boolean }) {
   const location = useLocation()
   const lastServersTapRef = useRef(0)
+  const touchStartYRef = useRef<number | null>(null)
   const filesPage = location.pathname.startsWith('/files')
 
   const handleServersTap = (active: boolean) => {
@@ -25,8 +26,21 @@ export default function BottomNav({ hidden = false }: { hidden?: boolean }) {
     lastServersTapRef.current = now
   }
 
+  const handleTouchStart = (event: TouchEvent<HTMLElement>) => {
+    touchStartYRef.current = event.touches[0]?.clientY ?? null
+  }
+
+  const handleTouchEnd = (event: TouchEvent<HTMLElement>) => {
+    const startY = touchStartYRef.current
+    const endY = event.changedTouches[0]?.clientY
+    touchStartYRef.current = null
+    if (filesPage && startY !== null && endY !== undefined && startY - endY > 32) {
+      window.dispatchEvent(new Event('files-bookmarks-open'))
+    }
+  }
+
   return (
-    <nav className={`shrink-0 safe-bottom ${filesPage ? 'h-[88px] border-t border-[#e6e9f0] bg-white' : 'border-t border-border/70 bg-surface-card'} ${hidden ? 'hidden' : ''}`}>
+    <nav onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd} className={`shrink-0 safe-bottom ${filesPage ? 'h-[88px] border-t border-[#e6e9f0] bg-white' : 'border-t border-border/70 bg-surface-card'} ${hidden ? 'hidden' : ''}`}>
       <div className={filesPage ? 'h-full px-2 py-1' : 'px-2 py-1.5'}>
         <div className="flex items-center justify-around">
           {tabs.map(({ to, icon: Icon, label }) => {
