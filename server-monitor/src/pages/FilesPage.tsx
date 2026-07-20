@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Folder, File as LucideFile, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Search, Upload, FileText, FolderPlus, FolderUp, Trash2, Loader2, Server, Download, X, CheckCircle, XCircle, ArrowUpCircle, ArrowDownCircle, Save, FileCode, Copy, RefreshCw, Menu, MoreVertical, Archive, Bookmark, MoveRight, ListFilter, Eye, EyeOff, ChevronRight, Plus, Minus, Maximize, Check, PenLine, FolderArchive, ImageIcon, Zap, FileEdit, Wrench, ChevronLeft, Terminal, Home, LogOut } from 'lucide-react'
+import { Folder, File as LucideFile, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Search, Upload, FileText, FolderPlus, FolderUp, Trash2, Loader2, Server, Download, X, CheckCircle, XCircle, ArrowUpCircle, ArrowDownCircle, Save, FileCode, Copy, RefreshCw, Menu, MoreVertical, Archive, Bookmark, ListFilter, Eye, EyeOff, ChevronRight, Plus, Minus, Maximize, Check, PenLine, FolderArchive, ImageIcon, Zap, FileEdit, Wrench, ChevronLeft, Terminal, Home, LogOut } from 'lucide-react'
 import { useToast } from '../components/ui/Toast'
 import { useServers } from '../store/ServerContext'
 import { transferManager } from '../services/transferManager'
@@ -1293,13 +1293,13 @@ export default function FilesPage() {
             ) : (
               leftFiles.map(file => (
                 <div key={file.name}
-                  className={`flex items-center gap-2.5 px-2 py-2.5 rounded-xl cursor-pointer ${selectedNames.includes(file.name) ? 'bg-blue-50' : 'active:bg-gray-50'}`}
+                  className={`flex items-center gap-2.5 px-2 py-1.5 cursor-pointer ${selectedNames.includes(file.name) ? 'bg-blue-50' : 'rounded-lg active:bg-gray-50'}`}
                   onClick={() => handleFileClick(file, 'left')}
                   onContextMenu={e => { e.preventDefault(); handleLongPress(file, 'left') }}
                   onTouchStart={() => { longPressTimerRef.current = window.setTimeout(() => handleLongPress(file, 'left'), 300) }}
                   onTouchEnd={() => { if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null } }}
                   onTouchMove={() => { if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null } }}>
-                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${selectedNames.includes(file.name) ? 'bg-blue-100' : 'bg-gray-100'}`}>
+                  <div className={`w-8 h-8 rounded-md flex items-center justify-center shrink-0 shadow-sm ${selectedNames.includes(file.name) ? 'bg-blue-100' : 'bg-gray-100'}`}>
                     <FileIcon file={file} size={16} />
                   </div>
                   <div className="min-w-0 flex-1">
@@ -1371,13 +1371,13 @@ export default function FilesPage() {
             ) : (
               rightFiles.map(file => (
                 <div key={file.name}
-                  className={`flex items-center gap-2.5 px-2 py-2.5 rounded-xl cursor-pointer ${selectedNames.includes(file.name) ? 'bg-blue-50' : 'active:bg-gray-50'}`}
+                  className={`flex items-center gap-2.5 px-2 py-1.5 cursor-pointer ${selectedNames.includes(file.name) ? 'bg-blue-50' : 'rounded-lg active:bg-gray-50'}`}
                   onClick={() => handleFileClick(file, 'right')}
                   onContextMenu={e => { e.preventDefault(); handleLongPress(file, 'right') }}
                   onTouchStart={() => { longPressTimerRef.current = window.setTimeout(() => handleLongPress(file, 'right'), 300) }}
                   onTouchEnd={() => { if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null } }}
                   onTouchMove={() => { if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null } }}>
-                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${selectedNames.includes(file.name) ? 'bg-blue-100' : 'bg-gray-100'}`}>
+                  <div className={`w-8 h-8 rounded-md flex items-center justify-center shrink-0 shadow-sm ${selectedNames.includes(file.name) ? 'bg-blue-100' : 'bg-gray-100'}`}>
                     <FileIcon file={file} size={16} />
                   </div>
                   <div className="min-w-0 flex-1">
@@ -1519,7 +1519,7 @@ export default function FilesPage() {
             <div className="grid grid-cols-2 gap-1 p-3">
               {[
                 { icon: Copy, label: '复制 ->', action: () => _copyFile(longPressTarget.file, longPressTarget.pane, longPressTarget.pane === 'left' ? 'right' : 'left') },
-                { icon: MoveRight, label: '移动 ->', action: () => _moveFile(longPressTarget.file, longPressTarget.pane, longPressTarget.pane === 'left' ? 'right' : 'left') },
+                { icon: null, label: '移动', action: () => _moveFile(longPressTarget.file, longPressTarget.pane, longPressTarget.pane === 'left' ? 'right' : 'left') },
                 { icon: FileEdit, label: '编辑', disabled: !isTextEditableFile(longPressTarget.file.name), action: () => { openEditor(longPressTarget.file, longPressTarget.pane); setLongPressTarget(null) } },
                 { icon: PenLine, label: '重命名', action: () => { setRenameTarget({ ...longPressTarget }); setNewFileName(longPressTarget.file.name); setLongPressTarget(null) } },
                 { icon: FolderArchive, label: '压缩', action: () => { compressTargetRef.current = longPressTarget; setCompressName(`${longPressTarget.file.name}.zip`); setCompressFormat('zip'); setCompressOpen(true); setLongPressTarget(null) } },
@@ -1529,7 +1529,7 @@ export default function FilesPage() {
                 { icon: FileText, label: '属性', action: () => { showPropertySheet(longPressTarget.file, longPressTarget.pane); setLongPressTarget(null) } },
                 { icon: Trash2, label: '删除', danger: true, action: () => { setShowDeleteConfirm({ ...longPressTarget }); setLongPressTarget(null) } },
               ].map(({ icon: Icon, label, action, disabled, danger }) => (
-                <button key={label} disabled={disabled} onClick={action} className={`flex items-center gap-2 rounded-xl px-3 py-3 text-left ${danger ? 'text-red-500 hover:bg-red-50' : disabled ? 'text-gray-300' : 'text-gray-700 hover:bg-gray-50'}`}><Icon size={17} /><span className="text-sm">{label}</span></button>
+                <button key={label} disabled={disabled} onClick={action} className={`flex items-center gap-2 rounded-xl px-3 py-3 text-left ${danger ? 'text-red-500 hover:bg-red-50' : disabled ? 'text-gray-300' : 'text-gray-700 hover:bg-gray-50'}`}>{Icon && <Icon size={17} />}<span className="text-sm">{label}</span></button>
               ))}
             </div>
           </div>
@@ -1642,12 +1642,18 @@ export default function FilesPage() {
                 <option value="zip">ZIP</option><option value="tar.gz">TAR.GZ</option><option value="tar.bz2">TAR.BZ2</option>
               </select>
             </div>
-            <div className="mb-2">
+            <div className="mb-3">
               <label className="text-[10px] text-gray-400 block mb-1">压缩级别</label>
-              <select value={compressLevel} onChange={e => setCompressLevel(e.target.value as any)}
-                className="w-full bg-gray-50 rounded-xl px-3 py-2.5 text-sm text-gray-700 border border-gray-200 outline-none">
-                <option value="store">仅存储</option><option value="fast">快速压缩</option><option value="normal">标准压缩</option><option value="max">最大压缩</option>
-              </select>
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  ['store', '仅存储'],
+                  ['fast', '快速压缩'],
+                  ['normal', '标准压缩'],
+                  ['max', '最大压缩'],
+                ] as const).map(([value, label]) => (
+                  <button key={value} type="button" onClick={() => setCompressLevel(value)} className={`rounded-lg px-3 py-2 text-xs font-medium ${compressLevel === value ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}`}>{label}</button>
+                ))}
+              </div>
             </div>
             <div className="mb-4">
               <label className="text-[10px] text-gray-400 block mb-1">密码</label>
