@@ -247,6 +247,7 @@ export default function FilesPage() {
   const touchScaleRef = useRef<{ dist: number; scale: number } | null>(null)
   const imageScaleFrameRef = useRef<number | null>(null)
   const pendingImageScaleRef = useRef(1)
+  const activePaneRef = useRef<'left' | 'right'>('left')
 
   const [activeTab, setActiveTab] = useState(paramId || '')
   const [activePane, setActivePane] = useState<'left' | 'right'>('left')
@@ -329,7 +330,9 @@ export default function FilesPage() {
   const [serverDrawerOpen, setServerDrawerOpen] = useState(false)
   const [serverSearch, setServerSearch] = useState('')
   const [toolsOpen, setToolsOpen] = useState(false)
+  const [toolsPane, setToolsPane] = useState<'left' | 'right'>('left')
   const [searchDialogOpen, setSearchDialogOpen] = useState(false)
+  const [searchPane, setSearchPane] = useState<'left' | 'right'>('left')
   const [bookmarksDrawerOpen, setBookmarksDrawerOpen] = useState(false)
   const [bookmarksMenuOpen, setBookmarksMenuOpen] = useState(false)
   const [bookmarkDrawerTab, setBookmarkDrawerTab] = useState('bookmarks')
@@ -353,6 +356,17 @@ export default function FilesPage() {
     const query = serverSearch.trim().toLowerCase()
     return !query || `${server.name} ${server.host} ${server.username}`.toLowerCase().includes(query)
   })
+
+  function activatePane(pane: 'left' | 'right') {
+    activePaneRef.current = pane
+    setActivePane(pane)
+  }
+
+  function toggleToolsMenu() {
+    const pane = activePaneRef.current
+    setToolsPane(pane)
+    setToolsOpen(open => !open)
+  }
 
   useEffect(() => {
     if (!activeTab && !paramId && servers.length > 0) {
@@ -415,7 +429,7 @@ export default function FilesPage() {
   }
 
   function getCurrentPaneState() {
-    return activePane === 'left' ? { state: tabState, setState: setTabState, serverId: activeTab, pane: 'left' as const } : { state: rightState, setState: setRightState, serverId: rightServerId, pane: 'right' as const }
+    return activePaneRef.current === 'left' ? { state: tabState, setState: setTabState, serverId: activeTab, pane: 'left' as const } : { state: rightState, setState: setRightState, serverId: rightServerId, pane: 'right' as const }
   }
 
   function getPaneInfo(pane: 'left' | 'right') {
@@ -875,13 +889,14 @@ export default function FilesPage() {
   }
 
   async function handleGlobalSearch() {
-    if (!activeTab || !isConnected(activeTab) || globalSearchQuery.length < 3) {
+    const { serverId, state } = getPaneInfo(searchPane)
+    if (!serverId || !isConnected(serverId) || globalSearchQuery.length < 3) {
       setSearchResults([])
       return
     }
     try {
-      const output = await execCommand(activeTab, `find -L ${tabState.currentPath} -maxdepth 5 -name "*${globalSearchQuery}*" 2>/dev/null | head -50`)
-      const results = output.split('\n').filter(Boolean).map(line => ({ name: line.split('/').pop() || line, path: line.startsWith('/') ? line.substring(0, line.lastIndexOf('/')) : tabState.currentPath }))
+      const output = await execCommand(serverId, `find -L ${state.currentPath} -maxdepth 5 -name "*${globalSearchQuery}*" 2>/dev/null | head -50`)
+      const results = output.split('\n').filter(Boolean).map(line => ({ name: line.split('/').pop() || line, path: line.startsWith('/') ? line.substring(0, line.lastIndexOf('/')) : state.currentPath }))
       setSearchResults(results)
     } catch { setSearchResults([]) }
   }
@@ -907,12 +922,13 @@ export default function FilesPage() {
 
   function handleCreateNew() {
     if (!newFileName.trim()) return
-    const { serverId, state } = getPaneInfo(activePane)
+    const pane = activePaneRef.current
+    const { serverId, state } = getPaneInfo(pane)
     if (!serverId) return
     const path = state.currentPath === '/' ? '/' + newFileName : state.currentPath + '/' + newFileName
     const cmd = newFileType === 'folder' ? `mkdir -p ${path}` : `touch ${path}`
     execCommand(serverId, cmd).then(() => {
-      loadFiles(serverId, state.currentPath, activePane === 'left' ? setTabState : setRightState)
+      loadFiles(serverId, state.currentPath, pane === 'left' ? setTabState : setRightState)
       showToast('创建成功', 'success')
     }).catch(() => showToast('创建失败', 'error'))
     setNewFileDialogOpen(false)
@@ -1233,7 +1249,7 @@ export default function FilesPage() {
         <button
           type="button"
           aria-label="打开文件工具菜单"
-          onClick={() => setToolsOpen(value => !value)}
+          onClick={toggleToolsMenu}
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-[#2b3442] active:bg-[#dce3ef]"
         >
           <MoreVertical size={25} strokeWidth={2.2} />
@@ -1242,12 +1258,12 @@ export default function FilesPage() {
 
       <main className="flex min-h-0 flex-1 bg-white">
         <section
-          onClick={() => setActivePane('left')}
+          onPointerDown={() => activatePane('left')}
           className={`relative flex min-w-0 flex-1 flex-col ${activePane === 'left' ? '' : 'bg-[#fcfcfd]'}`}
         >
           <div className="flex h-[58px] shrink-0 items-center gap-1.5 px-3">
-            <button disabled={!leftConnected} onClick={() => { setActivePane('left'); setNewFileType('file'); setNewFileName(''); setNewFileDialogOpen(true) }} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#eef0f5] bg-[#f7f6fb] text-[#bfc6d8] shadow-sm disabled:cursor-not-allowed disabled:border-[#edf0f4] disabled:bg-[#f5f6f8] disabled:text-[#c5cbd5] disabled:shadow-none"><FileText size={16} strokeWidth={1.7} /></button>
-            <button disabled={!leftConnected} onClick={() => { setActivePane('left'); setNewFileType('folder'); setNewFileName(''); setNewFileDialogOpen(true) }} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#edf1f3] bg-[#f4fbfd] text-[#a6dce8] shadow-sm disabled:cursor-not-allowed disabled:border-[#edf0f4] disabled:bg-[#f5f6f8] disabled:text-[#c5cbd5] disabled:shadow-none"><FolderPlus size={16} strokeWidth={1.7} /></button>
+            <button disabled={!leftConnected} onClick={() => { activatePane('left'); setNewFileType('file'); setNewFileName(''); setNewFileDialogOpen(true) }} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#eef0f5] bg-[#f7f6fb] text-[#bfc6d8] shadow-sm disabled:cursor-not-allowed disabled:border-[#edf0f4] disabled:bg-[#f5f6f8] disabled:text-[#c5cbd5] disabled:shadow-none"><FileText size={16} strokeWidth={1.7} /></button>
+            <button disabled={!leftConnected} onClick={() => { activatePane('left'); setNewFileType('folder'); setNewFileName(''); setNewFileDialogOpen(true) }} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#edf1f3] bg-[#f4fbfd] text-[#a6dce8] shadow-sm disabled:cursor-not-allowed disabled:border-[#edf0f4] disabled:bg-[#f5f6f8] disabled:text-[#c5cbd5] disabled:shadow-none"><FolderPlus size={16} strokeWidth={1.7} /></button>
             <button disabled={!leftConnected} onClick={() => handleUploadClick('left')} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#edf1f7] bg-[#f5f9ff] text-[#9ab8f3] shadow-sm disabled:cursor-not-allowed disabled:border-[#edf0f4] disabled:bg-[#f5f6f8] disabled:text-[#c5cbd5] disabled:shadow-none"><Upload size={16} strokeWidth={1.7} /></button>
             <button disabled={!leftConnected} onClick={() => handleUploadClick('left', true)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#f0eef8] bg-[#f8f5ff] text-[#c7b6f4] shadow-sm disabled:cursor-not-allowed disabled:border-[#edf0f4] disabled:bg-[#f5f6f8] disabled:text-[#c5cbd5] disabled:shadow-none"><FolderUp size={16} strokeWidth={1.7} /></button>
           </div>
@@ -1316,12 +1332,12 @@ export default function FilesPage() {
         <div className="w-px shrink-0 bg-[#d7dce4] shadow-[0_0_8px_rgba(54,66,85,0.10)]" />
 
         <section
-          onClick={() => setActivePane('right')}
+          onPointerDown={() => activatePane('right')}
           className={`relative flex min-w-0 flex-1 flex-col ${activePane === 'right' ? '' : 'bg-[#fcfcfd]'}`}
         >
           <div className="flex h-[58px] shrink-0 items-center gap-1.5 px-3">
-            <button disabled={!rightConnected} onClick={() => { setActivePane('right'); setNewFileType('file'); setNewFileName(''); setNewFileDialogOpen(true) }} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#eef0f5] bg-[#f7f6fb] text-[#bfc6d8] shadow-sm disabled:cursor-not-allowed disabled:border-[#edf0f4] disabled:bg-[#f5f6f8] disabled:text-[#c5cbd5] disabled:shadow-none"><FileText size={16} strokeWidth={1.7} /></button>
-            <button disabled={!rightConnected} onClick={() => { setActivePane('right'); setNewFileType('folder'); setNewFileName(''); setNewFileDialogOpen(true) }} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#edf1f3] bg-[#f4fbfd] text-[#a6dce8] shadow-sm disabled:cursor-not-allowed disabled:border-[#edf0f4] disabled:bg-[#f5f6f8] disabled:text-[#c5cbd5] disabled:shadow-none"><FolderPlus size={16} strokeWidth={1.7} /></button>
+            <button disabled={!rightConnected} onClick={() => { activatePane('right'); setNewFileType('file'); setNewFileName(''); setNewFileDialogOpen(true) }} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#eef0f5] bg-[#f7f6fb] text-[#bfc6d8] shadow-sm disabled:cursor-not-allowed disabled:border-[#edf0f4] disabled:bg-[#f5f6f8] disabled:text-[#c5cbd5] disabled:shadow-none"><FileText size={16} strokeWidth={1.7} /></button>
+            <button disabled={!rightConnected} onClick={() => { activatePane('right'); setNewFileType('folder'); setNewFileName(''); setNewFileDialogOpen(true) }} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#edf1f3] bg-[#f4fbfd] text-[#a6dce8] shadow-sm disabled:cursor-not-allowed disabled:border-[#edf0f4] disabled:bg-[#f5f6f8] disabled:text-[#c5cbd5] disabled:shadow-none"><FolderPlus size={16} strokeWidth={1.7} /></button>
             <button disabled={!rightConnected} onClick={() => handleUploadClick('right')} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#edf1f7] bg-[#f5f9ff] text-[#9ab8f3] shadow-sm disabled:cursor-not-allowed disabled:border-[#edf0f4] disabled:bg-[#f5f6f8] disabled:text-[#c5cbd5] disabled:shadow-none"><Upload size={16} strokeWidth={1.7} /></button>
             <button disabled={!rightConnected} onClick={() => handleUploadClick('right', true)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#f0eef8] bg-[#f8f5ff] text-[#c7b6f4] shadow-sm disabled:cursor-not-allowed disabled:border-[#edf0f4] disabled:bg-[#f5f6f8] disabled:text-[#c5cbd5] disabled:shadow-none"><FolderUp size={16} strokeWidth={1.7} /></button>
           </div>
@@ -1488,15 +1504,15 @@ export default function FilesPage() {
           <div className="absolute right-4 top-[calc(env(safe-area-inset-top)+8px)] w-[min(280px,calc(100vw-32px))] rounded-[20px] bg-white px-2 py-2 shadow-[0_10px_28px_rgba(31,38,50,0.18)]">
             <div className="space-y-0.5">
               {[
-                { icon: RefreshCw, label: '刷新', action: () => { const { serverId, state, setState } = getPaneInfo(activePane); if (serverId) loadFiles(serverId, state.currentPath, setState); setToolsOpen(false) } },
-                { icon: Search, label: '搜索', action: () => { setSearchDialogOpen(true); setToolsOpen(false) } },
-                { icon: Check, label: '全选当前目录', selected: selectedPane === activePane && selectedServerId === (activePane === 'left' ? activeTab : rightServerId) && (activePane === 'left' ? leftFiles : rightFiles).length > 0 && selectedNames.length === (activePane === 'left' ? leftFiles : rightFiles).length, action: () => { const files = activePane === 'left' ? leftFiles : rightFiles; const serverId = activePane === 'left' ? activeTab : rightServerId; const selected = selectedPane === activePane && selectedServerId === serverId && selectedNames.length === files.length; setSelectedPane(selected ? null : activePane); setSelectedServerId(selected ? '' : serverId); setSelectedNames(selected ? [] : files.map(file => file.name)); setToolsOpen(false) } },
-                { icon: showHidden ? EyeOff : Eye, label: '显示隐藏文件', action: () => { const next = !showHidden; setShowHidden(next); const { serverId, state, setState } = getPaneInfo(activePane); if (serverId) loadFiles(serverId, state.currentPath, setState, next); setToolsOpen(false) } },
+                { icon: RefreshCw, label: '刷新', action: () => { const { serverId, state, setState } = getPaneInfo(toolsPane); if (serverId) loadFiles(serverId, state.currentPath, setState); setToolsOpen(false) } },
+                { icon: Search, label: '搜索', action: () => { setSearchPane(toolsPane); setSearchDialogOpen(true); setToolsOpen(false) } },
+                { icon: Check, label: '全选当前目录', selected: selectedPane === toolsPane && selectedServerId === (toolsPane === 'left' ? activeTab : rightServerId) && (toolsPane === 'left' ? leftFiles : rightFiles).length > 0 && selectedNames.length === (toolsPane === 'left' ? leftFiles : rightFiles).length, action: () => { const files = toolsPane === 'left' ? leftFiles : rightFiles; const serverId = toolsPane === 'left' ? activeTab : rightServerId; const selected = selectedPane === toolsPane && selectedServerId === serverId && selectedNames.length === files.length; setSelectedPane(selected ? null : toolsPane); setSelectedServerId(selected ? '' : serverId); setSelectedNames(selected ? [] : files.map(file => file.name)); setToolsOpen(false) } },
+                { icon: showHidden ? EyeOff : Eye, label: '显示隐藏文件', action: () => { const next = !showHidden; setShowHidden(next); const { serverId, state, setState } = getPaneInfo(toolsPane); if (serverId) loadFiles(serverId, state.currentPath, setState, next); setToolsOpen(false) } },
                 { icon: ArrowDown, label: `排序：${({ name: '名称', modified: '日期', size: '大小', type: '类型' } as Record<string, string>)[sortBy]}`, action: () => { setSortDraft({ by: sortBy, reverse: sortOrder === 'desc', currentFolder: false }); setSortDialogOpen(true); setToolsOpen(false) } },
-                { icon: Terminal, label: '打开终端', action: () => { const { serverId } = getPaneInfo(activePane); if (serverId) navigate(`/terminal/${serverId}`); setToolsOpen(false) } },
-                { icon: Bookmark, label: '收藏书签', action: () => { const { serverId, state } = getPaneInfo(activePane); if (serverId) { const key = 'server-monitor-file-bookmarks'; const bookmarks = JSON.parse(localStorage.getItem(key) || '[]'); localStorage.setItem(key, JSON.stringify([...bookmarks, { serverId, name: state.currentPath, path: state.currentPath }])); setBookmarkVersion(version => version + 1); showToast('已收藏当前目录', 'success') }; setToolsOpen(false) } },
-                { icon: Home, label: '设为首页目录', action: () => { const { serverId, state } = getPaneInfo(activePane); if (serverId) localStorage.setItem(`server-monitor-home-directory-${serverId}`, state.currentPath); showToast('已设为首页目录', 'success'); setToolsOpen(false) } },
-                { icon: LogOut, label: '退出当前服务器', danger: true, action: () => { const serverId = activePane === 'left' ? activeTab : rightServerId; if (serverId) _disconnectServer(serverId); if (activePane === 'left') setActiveTab(''); else setRightServerId(''); setToolsOpen(false) } },
+                { icon: Terminal, label: '打开终端', action: () => { const { serverId } = getPaneInfo(toolsPane); if (serverId) navigate(`/terminal/${serverId}`); setToolsOpen(false) } },
+                { icon: Bookmark, label: '收藏书签', action: () => { const { serverId, state } = getPaneInfo(toolsPane); if (serverId) { const key = 'server-monitor-file-bookmarks'; const bookmarks = JSON.parse(localStorage.getItem(key) || '[]'); localStorage.setItem(key, JSON.stringify([...bookmarks, { serverId, name: state.currentPath, path: state.currentPath }])); setBookmarkVersion(version => version + 1); showToast('已收藏当前目录', 'success') }; setToolsOpen(false) } },
+                { icon: Home, label: '设为首页目录', action: () => { const { serverId, state } = getPaneInfo(toolsPane); if (serverId) localStorage.setItem(`server-monitor-home-directory-${serverId}`, state.currentPath); showToast('已设为首页目录', 'success'); setToolsOpen(false) } },
+                { icon: LogOut, label: '退出当前服务器', danger: true, action: () => { const serverId = toolsPane === 'left' ? activeTab : rightServerId; if (serverId) _disconnectServer(serverId); if (toolsPane === 'left') setActiveTab(''); else setRightServerId(''); setToolsOpen(false) } },
               ].map(({ icon: Icon, label, action, selected, danger }) => (
                 <button key={label} onClick={action} className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl text-left active:bg-[#f4f6fa] ${danger ? 'text-[#cf4141]' : 'text-[#252b35]'}`}>
                   <span className={`flex h-5 w-5 items-center justify-center border ${selected ? 'rounded-[5px] border-[#5a8dee] bg-[#5a8dee] text-white' : 'border-transparent'}`}><Icon size={20} strokeWidth={2} /></span><span className="text-[16px]">{label}</span>
@@ -1518,8 +1534,8 @@ export default function FilesPage() {
             </div>
             <div className="grid grid-cols-2 gap-1 p-3">
               {[
-                { icon: Copy, label: '复制 ->', action: () => _copyFile(longPressTarget.file, longPressTarget.pane, longPressTarget.pane === 'left' ? 'right' : 'left') },
-                { icon: null, label: '移动', action: () => _moveFile(longPressTarget.file, longPressTarget.pane, longPressTarget.pane === 'left' ? 'right' : 'left') },
+                { icon: Copy, label: longPressTarget.pane === 'left' ? '复制 →' : '复制 ←', action: () => _copyFile(longPressTarget.file, longPressTarget.pane, longPressTarget.pane === 'left' ? 'right' : 'left') },
+                { icon: null, label: longPressTarget.pane === 'left' ? '移动 →' : '移动 ←', action: () => _moveFile(longPressTarget.file, longPressTarget.pane, longPressTarget.pane === 'left' ? 'right' : 'left') },
                 { icon: FileEdit, label: '编辑', disabled: !isTextEditableFile(longPressTarget.file.name), action: () => { openEditor(longPressTarget.file, longPressTarget.pane); setLongPressTarget(null) } },
                 { icon: PenLine, label: '重命名', action: () => { setRenameTarget({ ...longPressTarget }); setNewFileName(longPressTarget.file.name); setLongPressTarget(null) } },
                 { icon: FolderArchive, label: '压缩', action: () => { compressTargetRef.current = longPressTarget; setCompressName(`${longPressTarget.file.name}.zip`); setCompressFormat('zip'); setCompressOpen(true); setLongPressTarget(null) } },
@@ -1817,7 +1833,7 @@ export default function FilesPage() {
             </div>
             <div className="overflow-y-auto" style={{ maxHeight: '40vh' }}>
               {searchResults.map((r, i) => (
-                <button key={i} onClick={() => { navigateTo(r.path, activePane); setSearchDialogOpen(false) }}
+                <button key={i} onClick={() => { navigateTo(r.path, searchPane); setSearchDialogOpen(false) }}
                   className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 text-left">
                   <div className="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center shrink-0"><LucideFile size={14} className="text-gray-400" /></div>
                   <div className="min-w-0"><span className="text-sm text-gray-700 block truncate">{r.name}</span><span className="text-[10px] text-gray-400">{r.path}</span></div>
@@ -1874,7 +1890,7 @@ export default function FilesPage() {
             </header>
             <div className="flex-1 overflow-y-auto px-4 py-3">
               {(bookmarkDrawerTab === 'recent' ? recentPaths : savedBookmarks.filter(bookmark => bookmarkDrawerTab === 'bookmarks' ? !bookmark.group : bookmark.group === bookmarkDrawerTab)).map(bookmark => (
-                <button key={`${bookmark.serverId}-${bookmark.path}`} onClick={() => { const { serverId } = getPaneInfo(activePane); if (serverId === bookmark.serverId) { navigateTo(bookmark.path, activePane); setBookmarksDrawerOpen(false) } else showToast('请先在当前面板连接书签所属服务器', 'info') }} className="flex w-full items-center gap-3 rounded-xl px-1 py-2 text-left active:bg-[#f4f6fa]">
+                <button key={`${bookmark.serverId}-${bookmark.path}`} onClick={() => { const pane = activePaneRef.current; const { serverId } = getPaneInfo(pane); if (serverId === bookmark.serverId) { navigateTo(bookmark.path, pane); setBookmarksDrawerOpen(false) } else showToast('请先在当前面板连接书签所属服务器', 'info') }} className="flex w-full items-center gap-3 rounded-xl px-1 py-2 text-left active:bg-[#f4f6fa]">
                   <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#2b3038] text-white"><Folder size={21} /></span><span className="min-w-0 flex-1"><span className="block truncate text-[17px] font-medium text-[#1a1e25]">{bookmark.name}</span><span className="block truncate text-[12px] leading-4 text-[#6f7784]">{bookmark.path}</span></span>
                 </button>
               ))}
