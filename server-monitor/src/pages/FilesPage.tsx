@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { useSearchParams } from 'react-router-dom'
-import { Folder, File as LucideFile, ArrowUp, ArrowLeft, ArrowRight, Search, Upload, FileText, FolderPlus, FolderUp, Trash2, Loader2, Server, Download, X, CheckCircle, XCircle, ArrowUpCircle, ArrowDownCircle, Save, FileCode, Copy, RefreshCw, Menu, MoreVertical, Archive, Bookmark, MoveRight, ListFilter, Eye, EyeOff, ChevronRight, Plus, Minus, Maximize, Check, PenLine, FolderArchive, ImageIcon, Zap, FileEdit, Wrench, ChevronLeft } from 'lucide-react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Folder, File as LucideFile, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Search, Upload, FileText, FolderPlus, FolderUp, Trash2, Loader2, Server, Download, X, CheckCircle, XCircle, ArrowUpCircle, ArrowDownCircle, Save, FileCode, Copy, RefreshCw, Menu, MoreVertical, Archive, Bookmark, MoveRight, ListFilter, Eye, EyeOff, ChevronRight, Plus, Minus, Maximize, Check, PenLine, FolderArchive, ImageIcon, Zap, FileEdit, Wrench, ChevronLeft, Terminal, Home, LogOut } from 'lucide-react'
 import { useToast } from '../components/ui/Toast'
 import { useServers } from '../store/ServerContext'
 import { transferManager } from '../services/transferManager'
@@ -220,6 +220,7 @@ function _ConfirmDialog({ open, title, message, confirmLabel, danger, onConfirm,
 
 export default function FilesPage() {
   const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
   const paramId = searchParams.get('id') || ''
 
   const { servers, connectServer, disconnectServer: _disconnectServer, isConnected, execCommand } = useServers()
@@ -312,6 +313,7 @@ export default function FilesPage() {
   const [sortBy, setSortBy] = useState<string>('name')
   const [sortOrder, setSortOrder] = useState<string>('asc')
   const [sortDialogOpen, setSortDialogOpen] = useState(false)
+  const [sortDraft, setSortDraft] = useState({ by: 'name', reverse: false, currentFolder: false })
   const [serverDrawerOpen, setServerDrawerOpen] = useState(false)
   const [serverSearch, setServerSearch] = useState('')
   const [toolsOpen, setToolsOpen] = useState(false)
@@ -364,12 +366,12 @@ export default function FilesPage() {
     }
   }, [showToast_local])
 
-  async function loadFiles(serverId: string, path: string, setter: (value: TabState | ((prev: TabState) => TabState)) => void) {
+  async function loadFiles(serverId: string, path: string, setter: (value: TabState | ((prev: TabState) => TabState)) => void, showHiddenOverride = showHidden) {
     const pane = setter === setTabState ? 'left' : 'right'
     const loadVersion = ++fileLoadVersionRef.current[pane]
     setter({ ...emptyTabState(), currentPath: path, loading: true, files: [], selectedFile: null, fileContent: '' })
     try {
-      const lsOpt = showHidden ? '-la' : '-l'
+      const lsOpt = showHiddenOverride ? '-la' : '-l'
       const output = await execCommand(serverId, `ls ${lsOpt} --time-style=+%s ${JSON.stringify(path)} 2>/dev/null | tail -n +2 || echo ""`)
       const files = parseLsOutput(output)
       if (fileLoadVersionRef.current[pane] === loadVersion) {
@@ -986,7 +988,7 @@ export default function FilesPage() {
   }, [compressDialog, compressName, compressFormat, compressLevel, compressPassword, execCommand, showToast])
 
   function getSortConfig(): { sortKey: string; ascending: boolean } {
-    return { sortKey: 'name', ascending: true }
+    return { sortKey: sortBy, ascending: sortOrder === 'asc' }
   }
 
   function sortFiles(files: FileItem[]): FileItem[] {
@@ -1406,14 +1408,21 @@ export default function FilesPage() {
       {toolsOpen && (
         <div className="fixed inset-0 z-[2000]">
           <div className="absolute inset-0" onClick={() => setToolsOpen(false)} />
-          <div className="absolute right-4 top-[68px] w-52 rounded-2xl border border-[#e8ebf1] bg-white p-2 shadow-xl">
+          <div className="absolute right-4 top-[calc(env(safe-area-inset-top)+60px)] w-[min(360px,calc(100vw-32px))] rounded-[20px] bg-white px-2 py-2 shadow-[0_10px_28px_rgba(31,38,50,0.18)]">
             <div className="space-y-0.5">
-              {[{ icon: ArrowUp, label: '返回上级目录', action: () => { navigateToParent(activePane); setToolsOpen(false) } },
-                { icon: MoveRight, label: '跳转路径', action: () => { setJumpOpen(true); setToolsOpen(false) } },
-                { icon: Search, label: '全局搜索', action: () => { setSearchDialogOpen(true); setToolsOpen(false) } },
-                { icon: Bookmark, label: '快速操作', action: () => { setShowQuickActions(true); setToolsOpen(false) } }].map(({ icon: Icon, label, action }) => (
-                <button key={label} onClick={action} className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-gray-50 text-left">
-                  <Icon size={16} className="text-gray-400" /><span className="text-sm text-gray-700">{label}</span>
+              {[
+                { icon: RefreshCw, label: '刷新', action: () => { const { serverId, state, setState } = getPaneInfo(activePane); if (serverId) loadFiles(serverId, state.currentPath, setState); setToolsOpen(false) } },
+                { icon: Search, label: '搜索', action: () => { setSearchDialogOpen(true); setToolsOpen(false) } },
+                { icon: Check, label: '全选当前目录', selected: (activePane === 'left' ? leftFiles : rightFiles).length > 0 && selectedNames.length === (activePane === 'left' ? leftFiles : rightFiles).length, action: () => { const files = activePane === 'left' ? leftFiles : rightFiles; setSelectedNames(prev => prev.length === files.length ? [] : files.map(file => file.name)); setToolsOpen(false) } },
+                { icon: showHidden ? EyeOff : Eye, label: '显示隐藏文件', action: () => { const next = !showHidden; setShowHidden(next); const { serverId, state, setState } = getPaneInfo(activePane); if (serverId) loadFiles(serverId, state.currentPath, setState, next); setToolsOpen(false) } },
+                { icon: ArrowDown, label: `排序：${({ name: '名称', modified: '日期', size: '大小', type: '类型' } as Record<string, string>)[sortBy]}`, action: () => { setSortDraft({ by: sortBy, reverse: sortOrder === 'desc', currentFolder: false }); setSortDialogOpen(true); setToolsOpen(false) } },
+                { icon: Terminal, label: '打开终端', action: () => { const { serverId } = getPaneInfo(activePane); if (serverId) navigate(`/terminal/${serverId}`); setToolsOpen(false) } },
+                { icon: Bookmark, label: '收藏书签', action: () => { const { serverId, state } = getPaneInfo(activePane); if (serverId) { const key = 'server-monitor-file-bookmarks'; const bookmarks = JSON.parse(localStorage.getItem(key) || '[]'); localStorage.setItem(key, JSON.stringify([...bookmarks, { serverId, name: state.currentPath, path: state.currentPath }])); showToast('已收藏当前目录', 'success') }; setToolsOpen(false) } },
+                { icon: Home, label: '设为首页目录', action: () => { const { serverId, state } = getPaneInfo(activePane); if (serverId) localStorage.setItem(`server-monitor-home-directory-${serverId}`, state.currentPath); showToast('已设为首页目录', 'success'); setToolsOpen(false) } },
+                { icon: LogOut, label: '退出当前服务器', danger: true, action: () => { const serverId = activePane === 'left' ? activeTab : rightServerId; if (serverId) _disconnectServer(serverId); if (activePane === 'left') setActiveTab(''); else setRightServerId(''); setToolsOpen(false) } },
+              ].map(({ icon: Icon, label, action, selected, danger }) => (
+                <button key={label} onClick={action} className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl text-left active:bg-[#f4f6fa] ${danger ? 'text-[#cf4141]' : 'text-[#252b35]'}`}>
+                  <span className={`flex h-5 w-5 items-center justify-center border ${selected ? 'rounded-[5px] border-[#5a8dee] bg-[#5a8dee] text-white' : 'border-transparent'}`}><Icon size={20} strokeWidth={2} /></span><span className="text-[16px]">{label}</span>
                 </button>
               ))}
             </div>
@@ -1759,21 +1768,28 @@ export default function FilesPage() {
 
       {/* 排序 */}
       {sortDialogOpen && (
-        <div className="fixed inset-0 z-[2000]">
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-5">
           <div className="absolute inset-0 bg-black/30" onClick={() => setSortDialogOpen(false)} />
-          <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl animate-slide-up">
-            <div className="sticky top-0 bg-white pt-3 pb-2 px-4 flex items-center justify-between border-b border-gray-100">
-              <h3 className="text-sm font-semibold text-gray-800">排序方式</h3>
-              <button onClick={() => setSortDialogOpen(false)}><X size={18} className="text-gray-400" /></button>
-            </div>
-            <div className="px-4 py-2 space-y-0.5">
-              {(['name', 'size', 'date', 'type'] as const).map(opt => (
-                <button key={opt} onClick={() => { setSortBy(opt); setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc'); setSortDialogOpen(false) }}
-                  className={`w-full flex items-center justify-between px-3 py-3 rounded-xl hover:bg-gray-50 ${sortBy === opt ? 'bg-blue-50' : ''}`}>
-                  <span className="text-sm text-gray-700">{{ name: '名称', size: '大小', date: '修改时间', type: '类型' }[opt]}</span>
-                  {sortBy === opt && <span className="text-xs text-blue-600">{sortOrder === 'asc' ? '升序' : '降序'}</span>}
+          <div className="relative w-full max-w-[598px] rounded-2xl bg-white px-5 pb-5 pt-6 shadow-xl animate-scale-in">
+            <h3 className="mb-6 text-[18px] font-bold text-[#222222]">排序方式 - {activePane === 'left' ? '左窗口' : '右窗口'}</h3>
+            <div className="grid grid-cols-2 gap-x-12 gap-y-5">
+              {[['name', '按名称'], ['modified', '按日期'], ['size', '按大小'], ['type', '按类型']].map(([value, label]) => (
+                <button key={value} onClick={() => setSortDraft(prev => ({ ...prev, by: value }))} className="flex items-center gap-3 py-1 text-left text-[16px] text-[#222222]">
+                  <span className={`flex h-5 w-5 items-center justify-center rounded-full border-2 ${sortDraft.by === value ? 'border-[#5a8dee]' : 'border-[#b5b5b5]'}`}>{sortDraft.by === value && <span className="h-2.5 w-2.5 rounded-full bg-[#5a8dee]" />}</span>{label}
                 </button>
               ))}
+            </div>
+            <div className="mt-7 space-y-4">
+              <button onClick={() => setSortDraft(prev => ({ ...prev, currentFolder: !prev.currentFolder }))} className="flex items-center gap-3 text-[16px] text-[#222222]">
+                <span className={`flex h-5 w-5 items-center justify-center rounded-[4px] border-2 ${sortDraft.currentFolder ? 'border-[#5a8dee] bg-[#5a8dee] text-white' : 'border-[#b5b5b5]'}`}>{sortDraft.currentFolder && <Check size={14} strokeWidth={3} />}</span>仅应用于此文件夹
+              </button>
+              <button onClick={() => setSortDraft(prev => ({ ...prev, reverse: !prev.reverse }))} className="flex items-center gap-3 text-[16px] text-[#222222]">
+                <span className={`flex h-5 w-5 items-center justify-center rounded-[4px] border-2 ${sortDraft.reverse ? 'border-[#5a8dee] bg-[#5a8dee] text-white' : 'border-[#b5b5b5]'}`}>{sortDraft.reverse && <Check size={14} strokeWidth={3} />}</span>逆向排序
+              </button>
+            </div>
+            <div className="mt-8 flex justify-end gap-8 text-[16px] font-medium text-[#3f6fd6]">
+              <button onClick={() => setSortDialogOpen(false)} className="px-2 py-1">取消</button>
+              <button onClick={() => { setSortBy(sortDraft.by); setSortOrder(sortDraft.reverse ? 'desc' : 'asc'); setSortDialogOpen(false) }} className="px-2 py-1">确定</button>
             </div>
           </div>
         </div>
