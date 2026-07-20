@@ -320,8 +320,11 @@ export default function FilesPage() {
   const [searchDialogOpen, setSearchDialogOpen] = useState(false)
   const [bookmarksDrawerOpen, setBookmarksDrawerOpen] = useState(false)
   const [bookmarksMenuOpen, setBookmarksMenuOpen] = useState(false)
+  const [bookmarkDrawerTab, setBookmarkDrawerTab] = useState('bookmarks')
   const [bookmarkGroupDialogOpen, setBookmarkGroupDialogOpen] = useState(false)
   const [bookmarkGroupName, setBookmarkGroupName] = useState('')
+  const [bookmarkGroupAction, setBookmarkGroupAction] = useState<string | null>(null)
+  const [bookmarkGroupRename, setBookmarkGroupRename] = useState<string | null>(null)
   const [bookmarkVersion, setBookmarkVersion] = useState(0)
   const [bookmarksHeight, setBookmarksHeight] = useState<'compact' | 'full'>(() => localStorage.getItem('server-monitor-bookmarks-height') === 'full' ? 'full' : 'compact')
   const [forwardHistory, setForwardHistory] = useState<Record<string, string[]>>({ left: [], right: [] })
@@ -412,6 +415,10 @@ export default function FilesPage() {
     const key = pane === 'left' ? 'left' : 'right'
     setForwardHistory(prev => ({ ...prev, [key]: [] }))
     loadFiles(serverId, path, (s) => { setState(s) })
+    const recents = JSON.parse(localStorage.getItem('server-monitor-file-recents') || '[]') as { serverId: string; path: string; name: string }[]
+    const name = path === '/' ? '/' : path.split('/').filter(Boolean).pop() || path
+    localStorage.setItem('server-monitor-file-recents', JSON.stringify([{ serverId, path, name }, ...recents.filter(item => item.serverId !== serverId || item.path !== path)].slice(0, 30)))
+    setBookmarkVersion(version => version + 1)
     setLongPressTarget(null)
     setSelectedNames([])
   }, [activeTab, rightServerId, showHidden, execCommand])
@@ -1122,6 +1129,10 @@ export default function FilesPage() {
     void bookmarkVersion
     try { return JSON.parse(localStorage.getItem('server-monitor-file-bookmark-groups') || '[]') as string[] } catch { return [] }
   })()
+  const recentPaths = (() => {
+    void bookmarkVersion
+    try { return JSON.parse(localStorage.getItem('server-monitor-file-recents') || '[]') as { serverId: string; path: string; name: string }[] } catch { return [] }
+  })()
   const editorMatches: number[] = (() => {
     if (!editingFile || !editorSearchQuery) return []
     const matches: number[] = []
@@ -1791,11 +1802,14 @@ export default function FilesPage() {
       {bookmarksDrawerOpen && (
         <div className="fixed inset-0 z-[2100] flex flex-col justify-end">
           <div className="absolute inset-0 bg-black/30" onClick={() => setBookmarksDrawerOpen(false)} />
-          <section className={`relative flex w-full flex-col overflow-hidden rounded-t-2xl border-t border-[#e4e7ed] bg-white shadow-2xl transition-[height] duration-200 ${bookmarksHeight === 'full' ? 'h-[92vh]' : 'h-[58vh]'}`}>
+          <section className={`relative flex w-full flex-col overflow-hidden rounded-t-2xl border-t border-[#e4e7ed] bg-white shadow-2xl animate-slide-up transition-[height] duration-200 ${bookmarksHeight === 'full' ? 'h-[92vh]' : 'h-[58vh]'}`}>
             <div className="mx-auto mt-2 h-1.5 w-12 shrink-0 rounded-full bg-[#c8ced8]" />
             <header className="relative flex shrink-0 items-end border-b border-[#e8ebf0] px-5 pt-3">
-              <button onClick={() => showToast('最近记录将在后续版本提供', 'info')} className="mr-9 pb-3 text-[17px] font-medium text-[#7c8490]">最近</button>
-              <div className="relative pb-3 text-[17px] font-semibold text-[#171b22]">书签<span className="absolute -bottom-px left-1/2 h-[3px] w-28 -translate-x-1/2 rounded-full bg-[#5b9bff]" /></div>
+              <div className="flex min-w-0 flex-1 items-end gap-8 overflow-x-auto">
+                {[['recent', '最近'], ['bookmarks', '书签'], ...bookmarkGroups.map(group => [group, group])].map(([tab, label]) => (
+                  <button key={tab} onClick={() => setBookmarkDrawerTab(tab)} onContextMenu={event => { if (tab !== 'recent' && tab !== 'bookmarks') { event.preventDefault(); setBookmarkGroupAction(tab) } }} onTouchStart={() => { if (tab !== 'recent' && tab !== 'bookmarks') longPressTimerRef.current = window.setTimeout(() => setBookmarkGroupAction(tab), 450) }} onTouchEnd={() => { if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current) }} className={`relative shrink-0 pb-3 text-[17px] ${bookmarkDrawerTab === tab ? 'font-semibold text-[#171b22]' : 'font-medium text-[#7c8490]'}`}>{label}{bookmarkDrawerTab === tab && <span className="absolute -bottom-px left-1/2 h-[3px] w-20 -translate-x-1/2 rounded-full bg-[#5b9bff]" />}</button>
+                ))}
+              </div>
               <button onClick={() => setBookmarksMenuOpen(value => !value)} className="ml-auto mb-1 flex h-8 w-8 items-center justify-center text-[#6e7684]" aria-label="书签设置"><MoreVertical size={23} /></button>
               {bookmarksMenuOpen && (
                 <div className="absolute right-3 top-12 z-10 w-64 rounded-lg bg-white py-2 shadow-2xl ring-1 ring-black/5">
@@ -1807,22 +1821,12 @@ export default function FilesPage() {
               )}
             </header>
             <div className="flex-1 overflow-y-auto px-4 py-3">
-              {bookmarkGroups.map(group => (
-                <div key={group} className="mb-4">
-                  <p className="px-1 pb-1 text-xs font-medium text-[#87909e]">{group}</p>
-                  {savedBookmarks.filter(bookmark => bookmark.group === group).map(bookmark => (
-                    <button key={`${bookmark.serverId}-${bookmark.path}`} onClick={() => { const { serverId } = getPaneInfo(activePane); if (serverId === bookmark.serverId) { navigateTo(bookmark.path, activePane); setBookmarksDrawerOpen(false) } else showToast('请先在当前面板连接书签所属服务器', 'info') }} className="flex w-full items-center gap-3 rounded-xl px-1 py-2 text-left active:bg-[#f4f6fa]">
-                      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#2b3038] text-white"><Folder size={21} /></span><span className="min-w-0 flex-1"><span className="block truncate text-[17px] font-medium text-[#1a1e25]">{bookmark.name}</span><span className="block truncate text-[12px] leading-4 text-[#6f7784]">{bookmark.path}</span></span>
-                    </button>
-                  ))}
-                </div>
-              ))}
-              {savedBookmarks.filter(bookmark => !bookmark.group || !bookmarkGroups.includes(bookmark.group)).map(bookmark => (
+              {(bookmarkDrawerTab === 'recent' ? recentPaths : savedBookmarks.filter(bookmark => bookmarkDrawerTab === 'bookmarks' ? !bookmark.group : bookmark.group === bookmarkDrawerTab)).map(bookmark => (
                 <button key={`${bookmark.serverId}-${bookmark.path}`} onClick={() => { const { serverId } = getPaneInfo(activePane); if (serverId === bookmark.serverId) { navigateTo(bookmark.path, activePane); setBookmarksDrawerOpen(false) } else showToast('请先在当前面板连接书签所属服务器', 'info') }} className="flex w-full items-center gap-3 rounded-xl px-1 py-2 text-left active:bg-[#f4f6fa]">
                   <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#2b3038] text-white"><Folder size={21} /></span><span className="min-w-0 flex-1"><span className="block truncate text-[17px] font-medium text-[#1a1e25]">{bookmark.name}</span><span className="block truncate text-[12px] leading-4 text-[#6f7784]">{bookmark.path}</span></span>
                 </button>
               ))}
-              {savedBookmarks.length === 0 && <p className="pt-16 text-center text-sm text-[#8992a0]">暂无书签</p>}
+              {(bookmarkDrawerTab === 'recent' ? recentPaths : savedBookmarks.filter(bookmark => bookmarkDrawerTab === 'bookmarks' ? !bookmark.group : bookmark.group === bookmarkDrawerTab)).length === 0 && <p className="pt-16 text-center text-sm text-[#8992a0]">{bookmarkDrawerTab === 'recent' ? '暂无最近记录' : '暂无书签'}</p>}
             </div>
           </section>
         </div>
@@ -1834,7 +1838,32 @@ export default function FilesPage() {
           <div className="relative w-full max-w-xs rounded-2xl bg-white p-5 shadow-xl animate-scale-in">
             <h3 className="mb-3 text-sm font-semibold text-gray-800">添加书签分组</h3>
             <input value={bookmarkGroupName} onChange={event => setBookmarkGroupName(event.target.value)} autoFocus placeholder="分组名称" className="mb-4 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-800 outline-none focus:border-blue-300" />
-            <div className="flex gap-2"><button onClick={() => setBookmarkGroupDialogOpen(false)} className="flex-1 rounded-xl bg-gray-100 py-2.5 text-sm text-gray-600">取消</button><button onClick={() => { const name = bookmarkGroupName.trim(); if (!name) return; localStorage.setItem('server-monitor-file-bookmark-groups', JSON.stringify([...bookmarkGroups, name])); setBookmarkVersion(version => version + 1); setBookmarkGroupDialogOpen(false) }} className="flex-1 rounded-xl bg-blue-50 py-2.5 text-sm text-blue-600">确定</button></div>
+            <div className="flex gap-2"><button onClick={() => setBookmarkGroupDialogOpen(false)} className="flex-1 rounded-xl bg-gray-100 py-2.5 text-sm text-gray-600">取消</button><button onClick={() => { const name = bookmarkGroupName.trim(); if (!name || bookmarkGroups.includes(name)) return; localStorage.setItem('server-monitor-file-bookmark-groups', JSON.stringify([...bookmarkGroups, name])); setBookmarkDrawerTab(name); setBookmarkVersion(version => version + 1); setBookmarkGroupDialogOpen(false) }} className="flex-1 rounded-xl bg-blue-50 py-2.5 text-sm text-blue-600">确定</button></div>
+          </div>
+        </div>
+      )}
+
+      {bookmarkGroupAction && (
+        <div className="fixed inset-0 z-[2200] flex items-center justify-center p-5">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setBookmarkGroupAction(null)} />
+          <div className="relative w-full max-w-[330px] overflow-hidden rounded-md bg-white py-1 shadow-xl animate-scale-in">
+            {(() => { const index = bookmarkGroups.indexOf(bookmarkGroupAction); return <>
+              <button disabled={index === 0} onClick={() => { const groups = [...bookmarkGroups]; [groups[index - 1], groups[index]] = [groups[index], groups[index - 1]]; localStorage.setItem('server-monitor-file-bookmark-groups', JSON.stringify(groups)); setBookmarkVersion(version => version + 1); setBookmarkGroupAction(null) }} className="w-full px-6 py-4 text-left text-[16px] text-[#181c22] disabled:text-[#c5cad3]">← 左移</button>
+              <button disabled={index === bookmarkGroups.length - 1} onClick={() => { const groups = [...bookmarkGroups]; [groups[index], groups[index + 1]] = [groups[index + 1], groups[index]]; localStorage.setItem('server-monitor-file-bookmark-groups', JSON.stringify(groups)); setBookmarkVersion(version => version + 1); setBookmarkGroupAction(null) }} className="w-full px-6 py-4 text-left text-[16px] text-[#181c22] disabled:text-[#c5cad3]">右移 -&gt;</button>
+              <button onClick={() => { setBookmarkGroupRename(bookmarkGroupAction); setBookmarkGroupName(bookmarkGroupAction); setBookmarkGroupAction(null) }} className="w-full px-6 py-4 text-left text-[16px] text-[#181c22]">重命名</button>
+              <button onClick={() => { const groups = bookmarkGroups.filter(group => group !== bookmarkGroupAction); const bookmarks = savedBookmarks.map(bookmark => bookmark.group === bookmarkGroupAction ? { ...bookmark, group: undefined } : bookmark); localStorage.setItem('server-monitor-file-bookmark-groups', JSON.stringify(groups)); localStorage.setItem('server-monitor-file-bookmarks', JSON.stringify(bookmarks)); setBookmarkDrawerTab('bookmarks'); setBookmarkVersion(version => version + 1); setBookmarkGroupAction(null) }} className="w-full px-6 py-4 text-left text-[16px] text-[#181c22]">删除</button>
+            </> })()}
+          </div>
+        </div>
+      )}
+
+      {bookmarkGroupRename && (
+        <div className="fixed inset-0 z-[2300] flex items-center justify-center p-5">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setBookmarkGroupRename(null)} />
+          <div className="relative w-full max-w-xs rounded-2xl bg-white p-5 shadow-xl animate-scale-in">
+            <h3 className="mb-3 text-sm font-semibold text-gray-800">重命名分组</h3>
+            <input value={bookmarkGroupName} onChange={event => setBookmarkGroupName(event.target.value)} autoFocus className="mb-4 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-800 outline-none focus:border-blue-300" />
+            <div className="flex gap-2"><button onClick={() => setBookmarkGroupRename(null)} className="flex-1 rounded-xl bg-gray-100 py-2.5 text-sm text-gray-600">取消</button><button onClick={() => { const name = bookmarkGroupName.trim(); if (!name || bookmarkGroups.includes(name)) return; const groups = bookmarkGroups.map(group => group === bookmarkGroupRename ? name : group); const bookmarks = savedBookmarks.map(bookmark => bookmark.group === bookmarkGroupRename ? { ...bookmark, group: name } : bookmark); localStorage.setItem('server-monitor-file-bookmark-groups', JSON.stringify(groups)); localStorage.setItem('server-monitor-file-bookmarks', JSON.stringify(bookmarks)); setBookmarkDrawerTab(name); setBookmarkVersion(version => version + 1); setBookmarkGroupRename(null) }} className="flex-1 rounded-xl bg-blue-50 py-2.5 text-sm text-blue-600">确定</button></div>
           </div>
         </div>
       )}
