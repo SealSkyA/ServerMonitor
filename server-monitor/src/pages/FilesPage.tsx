@@ -302,6 +302,11 @@ export default function FilesPage() {
   const [archiveBrowse, setArchiveBrowse] = useState<{ pane: 'left' | 'right'; serverId: string; archivePath: string; archiveName: string; entries: string[]; dirPath: string } | null>(null)
   const [archiveLoading, setArchiveLoading] = useState(false)
   const [editingFile, setEditingFile] = useState<any>(null)
+  const [editorSearchQuery, setEditorSearchQuery] = useState('')
+  const [editorSearchOpen, setEditorSearchOpen] = useState(false)
+  const [editorSearchIndex, setEditorSearchIndex] = useState(0)
+  const editorTextareaRef = useRef<HTMLTextAreaElement>(null)
+  const editorSearchInputRef = useRef<HTMLInputElement>(null)
   const [jumpOpen, setJumpOpen] = useState(false)
   const [jumpPath, setJumpPath] = useState('')
   const [sortBy, setSortBy] = useState<string>('name')
@@ -744,6 +749,17 @@ export default function FilesPage() {
     setLongPressTarget({ file, pane })
   }
 
+  function addBookmark(file: FileItem, pane: 'left' | 'right') {
+    const { serverId, state } = getPaneInfo(pane)
+    if (!serverId) return
+    const key = 'server-monitor-file-bookmarks'
+    const bookmarks = JSON.parse(localStorage.getItem(key) || '[]')
+    const path = state.currentPath === '/' ? '/' + file.name : state.currentPath + '/' + file.name
+    localStorage.setItem(key, JSON.stringify([...bookmarks, { serverId, name: file.name, path }]))
+    showToast('已添加书签', 'success')
+    setLongPressTarget(null)
+  }
+
   function handlePermissionsSave() {
     if (!permissionsDialog) return
     const { serverId, state } = getPaneInfo(permissionsDialog.pane)
@@ -1083,6 +1099,26 @@ export default function FilesPage() {
 
   const leftFiles = sortFiles(tabState.files)
   const rightFiles = sortFiles(rightState.files)
+  const editorMatches: number[] = (() => {
+    if (!editingFile || !editorSearchQuery) return []
+    const matches: number[] = []
+    const content = editingFile.content.toLowerCase()
+    const query = editorSearchQuery.toLowerCase()
+    let index = -1
+    while ((index = content.indexOf(query, index + 1)) !== -1) matches.push(index)
+    return matches
+  })()
+
+  function navigateEditorSearch(direction: number) {
+    if (!editorMatches.length) return
+    const nextIndex = (editorSearchIndex + direction + editorMatches.length) % editorMatches.length
+    setEditorSearchIndex(nextIndex)
+    const position = editorMatches[nextIndex]
+    requestAnimationFrame(() => {
+      editorTextareaRef.current?.focus()
+      editorTextareaRef.current?.setSelectionRange(position, position + editorSearchQuery.length)
+    })
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-white text-[#1f2632]">
@@ -1389,19 +1425,21 @@ export default function FilesPage() {
       {longPressTarget && (
         <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/30" onClick={() => { setLongPressTarget(null); setSelectedNames([]) }} />
-          <div className="relative w-full max-w-md bg-white rounded-2xl animate-scale-in shadow-xl">
+          <div className="relative w-full max-w-md bg-white animate-scale-in shadow-xl">
             <div className="bg-white px-5 pt-4 pb-3 flex items-center justify-between border-b border-gray-100">
               <h3 className="text-sm font-semibold text-gray-800 truncate">{longPressTarget.file.name}</h3>
               <button onClick={() => { setLongPressTarget(null); setSelectedNames([]) }}><X size={18} className="text-gray-400" /></button>
             </div>
             <div className="grid grid-cols-2 gap-1 p-3">
               {[
-                { icon: Copy, label: `复制 → ${longPressTarget.pane === 'left' ? '右侧' : '左侧'}`, action: () => _copyFile(longPressTarget.file, longPressTarget.pane, longPressTarget.pane === 'left' ? 'right' : 'left') },
-                { icon: MoveRight, label: `移动 → ${longPressTarget.pane === 'left' ? '右侧' : '左侧'}`, action: () => _moveFile(longPressTarget.file, longPressTarget.pane, longPressTarget.pane === 'left' ? 'right' : 'left') },
+                { icon: Copy, label: '复制 ->', action: () => _copyFile(longPressTarget.file, longPressTarget.pane, longPressTarget.pane === 'left' ? 'right' : 'left') },
+                { icon: MoveRight, label: '移动 ->', action: () => _moveFile(longPressTarget.file, longPressTarget.pane, longPressTarget.pane === 'left' ? 'right' : 'left') },
                 { icon: FileEdit, label: '编辑', disabled: !isTextEditableFile(longPressTarget.file.name), action: () => { openEditor(longPressTarget.file, longPressTarget.pane); setLongPressTarget(null) } },
                 { icon: PenLine, label: '重命名', action: () => { setRenameTarget({ ...longPressTarget }); setNewFileName(longPressTarget.file.name); setLongPressTarget(null) } },
                 { icon: FolderArchive, label: '压缩', action: () => { compressTargetRef.current = longPressTarget; setCompressName(`${longPressTarget.file.name}.zip`); setCompressFormat('zip'); setCompressOpen(true); setLongPressTarget(null) } },
                 { icon: Download, label: '下载', action: () => { downloadFromPane(longPressTarget.file, longPressTarget.pane); setLongPressTarget(null) } },
+                { icon: ArrowUpCircle, label: '解压到...', disabled: !isArchiveFile(longPressTarget.file.name), action: () => { compressTargetRef.current = longPressTarget; setExtractPath(''); setExtractOpen(true); setLongPressTarget(null) } },
+                { icon: Bookmark, label: '添加书签', action: () => addBookmark(longPressTarget.file, longPressTarget.pane) },
                 { icon: FileText, label: '属性', action: () => { showPropertySheet(longPressTarget.file, longPressTarget.pane); setLongPressTarget(null) } },
                 { icon: Trash2, label: '删除', danger: true, action: () => { setShowDeleteConfirm({ ...longPressTarget }); setLongPressTarget(null) } },
               ].map(({ icon: Icon, label, action, disabled, danger }) => (
@@ -1593,14 +1631,17 @@ export default function FilesPage() {
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
             <button onClick={() => setEditingFile(null)} className="p-2 rounded-lg hover:bg-gray-100"><ChevronLeft size={20} className="text-gray-600" /></button>
             <span className="text-sm font-medium text-gray-800 truncate mx-2">{editingFile.name}</span>
-            <button onClick={saveEditorFile} disabled={editingFile.isTruncated} className="p-2 rounded-lg bg-blue-50 text-blue-600 disabled:opacity-40"><Save size={18} /></button>
+            <div className="flex items-center gap-1"><button onClick={() => { setEditorSearchOpen(value => !value); requestAnimationFrame(() => editorSearchInputRef.current?.focus()) }} className="p-2 rounded-lg hover:bg-gray-100"><Search size={18} className="text-gray-600" /></button><button onClick={saveEditorFile} disabled={editingFile.isTruncated} className="p-2 rounded-lg bg-blue-50 text-blue-600 disabled:opacity-40"><Save size={18} /></button></div>
           </div>
-          <textarea value={editingFile.content}
-            onChange={e => setEditingFile((prev: typeof editingFile) => prev ? { ...prev, content: e.target.value } : null)}
-            className="flex-1 w-full bg-gray-50 px-4 py-3 text-sm text-gray-800 font-mono resize-none outline-none" spellCheck={false} readOnly={editingFile.isTruncated} />
+          {editorSearchOpen && <div className="flex items-center gap-2 border-b border-gray-100 px-3 py-2"><input ref={editorSearchInputRef} value={editorSearchQuery} onChange={e => { setEditorSearchQuery(e.target.value); setEditorSearchIndex(0) }} onKeyDown={e => { if (e.key === 'Enter') navigateEditorSearch(e.shiftKey ? -1 : 1) }} placeholder="搜索文本" className="min-w-0 flex-1 rounded-lg bg-gray-100 px-3 py-2 text-sm outline-none" /><span className="text-xs text-gray-500">{editorMatches.length ? `${editorSearchIndex + 1}/${editorMatches.length}` : '0/0'}</span><button onClick={() => navigateEditorSearch(-1)} className="p-1 text-gray-600"><ChevronLeft size={18} /></button><button onClick={() => navigateEditorSearch(1)} className="p-1 text-gray-600"><ChevronRight size={18} /></button></div>}
+          <div className="flex flex-1 min-h-0 overflow-auto bg-gray-50">
+            <pre aria-hidden="true" className="sticky left-0 select-none border-r border-gray-200 bg-[#f4f5f7] px-2 py-3 text-right text-sm leading-6 text-gray-400 font-mono">{Array.from({ length: Math.max(1, editingFile.content.split('\n').length) }, (_, index) => index + 1).join('\n')}</pre>
+            <textarea ref={editorTextareaRef} value={editingFile.content} onKeyDown={event => { if (event.key === 'Tab') { event.preventDefault(); const target = event.currentTarget; const start = target.selectionStart; setEditingFile((prev: any) => prev ? { ...prev, content: prev.content.slice(0, start) + '  ' + prev.content.slice(target.selectionEnd) } : null); requestAnimationFrame(() => target.setSelectionRange(start + 2, start + 2)) } }} onChange={e => setEditingFile((prev: typeof editingFile) => prev ? { ...prev, content: e.target.value } : null)} className="min-h-full min-w-[calc(100%-44px)] flex-1 bg-transparent px-3 py-3 text-sm leading-6 text-gray-800 font-mono resize-none outline-none" spellCheck={false} readOnly={editingFile.isTruncated} />
+          </div>
           <div className="px-4 py-2 text-[10px] text-gray-400 text-right border-t border-gray-100">
-            {editingFile.content.split('\n').length} 行 | {(new Blob([editingFile.content]).size / 1024).toFixed(1)} KB
+            {editingFile.isTruncated ? '大文件只读预览 | ' : ''}{editingFile.content.split('\n').length} 行 | {(new Blob([editingFile.content]).size / 1024).toFixed(1)} KB
           </div>
+          {editingFile.isTruncated && <div className="flex items-center justify-center gap-3 border-t border-gray-100 px-4 py-2"><button onClick={() => _loadEditorChunk(Math.max(0, (editingFile.chunkOffset || 0) - LARGE_FILE_CHUNK_BYTES))} disabled={!editingFile.chunkOffset} className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs text-gray-600 disabled:opacity-40">上一页</button><span className="text-xs text-gray-400">第 {Math.floor((editingFile.chunkOffset || 0) / LARGE_FILE_CHUNK_BYTES) + 1} 页</span><button onClick={() => _loadEditorChunk((editingFile.chunkOffset || 0) + LARGE_FILE_CHUNK_BYTES)} className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs text-gray-600">下一页</button></div>}
         </div>
       )}
 
