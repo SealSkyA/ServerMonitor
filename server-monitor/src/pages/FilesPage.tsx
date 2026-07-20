@@ -240,6 +240,7 @@ export default function FilesPage() {
   const editorChunkOffsetRef = useRef(0)
   const editorFilePathRef = useRef('')
   const editorServerIdRef = useRef('')
+  const fileLoadVersionRef = useRef({ left: 0, right: 0 })
   const compressTargetRef = useRef<{ file: FileItem; pane: 'left' | 'right' } | null>(null)
   const touchScaleRef = useRef<{ dist: number; scale: number } | null>(null)
 
@@ -366,14 +367,20 @@ export default function FilesPage() {
   }, [showToast_local])
 
   async function loadFiles(serverId: string, path: string, setter: (value: TabState | ((prev: TabState) => TabState)) => void) {
+    const pane = setter === setTabState ? 'left' : 'right'
+    const loadVersion = ++fileLoadVersionRef.current[pane]
     setter({ ...emptyTabState(), currentPath: path, loading: true, files: [], selectedFile: null, fileContent: '' })
     try {
       const lsOpt = showHidden ? '-la' : '-l'
       const output = await execCommand(serverId, `ls ${lsOpt} --time-style=+%s ${JSON.stringify(path)} 2>/dev/null | tail -n +2 || echo ""`)
       const files = parseLsOutput(output)
-      setter(prev => ({ ...prev, files, loading: false }))
+      if (fileLoadVersionRef.current[pane] === loadVersion) {
+        setter(prev => ({ ...prev, files, loading: false }))
+      }
     } catch {
-      setter(prev => ({ ...prev, loading: false }))
+      if (fileLoadVersionRef.current[pane] === loadVersion) {
+        setter(prev => ({ ...prev, loading: false }))
+      }
     }
   }
 
