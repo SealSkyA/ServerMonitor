@@ -1071,7 +1071,7 @@ export default function FilesPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-white text-[#1f2632]">
-      <header className="flex h-[76px] shrink-0 items-center gap-3 bg-[#e9eef6] px-5">
+      <header className="flex h-[calc(76px+env(safe-area-inset-top))] shrink-0 items-center gap-3 bg-[#e9eef6] px-5 pt-safe">
         <button
           type="button"
           aria-label="打开服务器列表"
@@ -1080,9 +1080,29 @@ export default function FilesPage() {
         >
           <Menu size={27} strokeWidth={2.2} />
         </button>
-        <h1 className="min-w-0 flex-1 truncate text-[23px] font-bold tracking-normal text-[#1f2632]">
-          {activeServer?.name || '请连接服务器'}
-        </h1>
+        {activeServer && isConnected(activeServer.id) ? (
+          <button
+            type="button"
+            aria-label="跳转到目录"
+            onClick={() => {
+              setJumpPath(activePane === 'left' ? tabState.currentPath : rightState.currentPath)
+              setJumpOpen(true)
+            }}
+            className="min-w-0 flex-1 text-left"
+          >
+            <span className="flex min-w-0 items-baseline gap-1 truncate text-[20px] font-bold tracking-normal text-[#1f2632]">
+              <span className="truncate">{activeServer.name}</span>
+              <span className="shrink-0 text-[13px] font-medium text-[#657182]">· {activeServer.host}</span>
+            </span>
+            <span className="block truncate text-[12px] font-medium text-[#657182]">
+              {activePane === 'left' ? tabState.currentPath : rightState.currentPath}
+            </span>
+          </button>
+        ) : (
+          <h1 className="min-w-0 flex-1 truncate text-[23px] font-bold tracking-normal text-[#1f2632]">
+            请连接服务器
+          </h1>
+        )}
         <button
           type="button"
           aria-label="打开文件工具菜单"
