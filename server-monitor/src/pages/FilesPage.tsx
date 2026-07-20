@@ -275,6 +275,7 @@ export default function FilesPage() {
   const [extractPath, setExtractPath] = useState('')
   const [scale, setScale] = useState(1)
   const [propertySheet, setPropertySheet] = useState<{ file: FileItem; pane?: string; currentPath?: string } | null>(null)
+  const [propertyMoreOpen, setPropertyMoreOpen] = useState(false)
   const [permissionsDialog, setPermissionsDialog] = useState<{ file: FileItem; pane: 'left' | 'right' } | null>(null)
   const [permCheck, setPermCheck] = useState<Record<string, Record<number, boolean>>>({ R: { 0: false, 1: false, 2: false }, W: { 0: false, 1: false, 2: false }, X: { 0: false, 1: false, 2: false } })
   const [permStr, _setPermStr] = useState('---')
@@ -433,12 +434,14 @@ export default function FilesPage() {
     const { serverId, state } = getPaneInfo(pane)
     if (!serverId) return
     try {
+      setProgressDialog({ title: '删除中...', message: file.name })
       await execCommand(serverId, `rm -rf ${JSON.stringify(state.currentPath + '/' + file.name)}`)
       showToast(`已删除 ${file.name}`, 'success')
       loadFiles(serverId, state.currentPath, pane === 'left' ? setTabState : setRightState)
     } catch (e: any) {
       showToast(`删除失败: ${e.message || e}`, 'error')
     }
+    setProgressDialog(null)
     setShowDeleteConfirm(null)
   }, [execCommand, showToast, getPaneInfo])
 
@@ -447,6 +450,7 @@ export default function FilesPage() {
     const { serverId, state } = getPaneInfo(renameTarget.pane)
     if (!serverId || !newFileName.trim()) return
     try {
+      setProgressDialog({ title: '重命名中...', message: renameTarget.file.name })
       const oldPath = state.currentPath + '/' + renameTarget.file.name
       const newPath = state.currentPath + '/' + newFileName.trim()
       await execCommand(serverId, `mv ${JSON.stringify(oldPath)} ${JSON.stringify(newPath)}`)
@@ -455,6 +459,7 @@ export default function FilesPage() {
     } catch (e: any) {
       showToast(`重命名失败: ${e.message || e}`, 'error')
     }
+    setProgressDialog(null)
     setRenameTarget(null)
     setNewFileName('')
   }, [renameTarget, newFileName, execCommand, showToast, getPaneInfo])
@@ -536,13 +541,14 @@ export default function FilesPage() {
 
   async function saveEditorFile() {
     if (!editingFile) return
-    const { serverId } = getPaneInfo(editingFile.pane)
-    if (!serverId) return
+    if (editingFile.isTruncated) {
+      showToast('大文件预览为只读模式', 'info')
+      return
+    }
     try {
-      setProgressDialog({ title: '保存中...', message: editingFile.file.name })
-      const path = editingFile.state.currentPath === '/' ? '/' + editingFile.file.name : editingFile.state.currentPath + '/' + editingFile.file.name
+      setProgressDialog({ title: '保存中...', message: editingFile.name })
       const b64 = btoa(unescape(encodeURIComponent(editingFile.content)))
-      await execCommand(serverId, `echo ${JSON.stringify(b64)} | base64 -d > ${JSON.stringify(path)}`)
+      await execCommand(editingFile.serverId, `echo ${JSON.stringify(b64)} | base64 -d > ${JSON.stringify(editingFile.path)}`)
       showToast('文件已保存', 'success')
       setEditingFile(null)
     } catch { showToast('保存失败', 'error') }
@@ -758,14 +764,13 @@ export default function FilesPage() {
     const { file, pane } = compressTargetRef.current
     const { serverId, state } = getPaneInfo(pane)
     if (!serverId) return
-    const targetPath = state.currentPath === '/' ? '/' + file.name : state.currentPath + '/' + file.name
-    const outName = file.name + '.' + compressFormat.replace('.', '_')
-    const outPath = state.currentPath === '/' ? '/' + outName : state.currentPath + '/' + outName
+    const defaultExtension = compressFormat === 'zip' ? '.zip' : compressFormat === 'tar.gz' ? '.tar.gz' : '.tar.bz2'
+    const outName = compressName.trim() || `${file.name}${defaultExtension}`
     try {
       setProgressDialog({ title: '压缩中...', message: file.name })
-      const cmd = compressFormat === 'zip' ? `cd ${state.currentPath} && zip -${compressLevel === 'store' ? '0' : compressLevel === 'fast' ? '1' : compressLevel === 'max' ? '9' : '5'}${compressPassword ? ' -P ' + compressPassword : ''} -r ${outName} ${file.name}` :
-        compressFormat === 'tar.gz' ? `cd ${state.currentPath} && tar -czf ${outName} ${file.name}` :
-        `cd ${state.currentPath} && tar -cjf ${outName} ${file.name}`
+      const cmd = compressFormat === 'zip' ? `cd ${JSON.stringify(state.currentPath)} && zip -${compressLevel === 'store' ? '0' : compressLevel === 'fast' ? '1' : compressLevel === 'max' ? '9' : '5'}${compressPassword ? ' -P ' + JSON.stringify(compressPassword) : ''} -r ${JSON.stringify(outName)} ${JSON.stringify(file.name)}` :
+        compressFormat === 'tar.gz' ? `cd ${JSON.stringify(state.currentPath)} && tar -czf ${JSON.stringify(outName)} ${JSON.stringify(file.name)}` :
+        `cd ${JSON.stringify(state.currentPath)} && tar -cjf ${JSON.stringify(outName)} ${JSON.stringify(file.name)}`
       await execCommand(serverId, cmd)
       showToast('压缩完成: ' + outName, 'info')
     } catch { showToast('压缩失败', 'error') }
@@ -828,6 +833,7 @@ export default function FilesPage() {
 
   function showPropertySheet(file: FileItem, pane: 'left' | 'right') {
     const { state } = getPaneInfo(pane)
+    setPropertyMoreOpen(false)
     setPropertySheet({ file, pane, currentPath: state.currentPath })
   }
 
@@ -851,12 +857,15 @@ export default function FilesPage() {
     const srcPath = src.state.currentPath + '/' + sourceFile.name
     const tgtPath = tgt.state.currentPath + '/' + sourceFile.name
     try {
+      if (src.serverId !== tgt.serverId) throw new Error('复制目标需要与源文件位于同一服务器')
+      setProgressDialog({ title: '复制中...', message: `${sourceFile.name} → ${targetPane === 'left' ? '左侧面板' : '右侧面板'}` })
       await execCommand(src.serverId, `cp -r ${JSON.stringify(srcPath)} ${JSON.stringify(tgtPath)}`)
       showToast(`已复制 ${sourceFile.name}`, 'success')
       loadFiles(tgt.serverId, tgt.state.currentPath, targetPane === 'left' ? setTabState : setRightState)
     } catch (e: any) {
       showToast(`复制失败: ${e.message || e}`, 'error')
     }
+    setProgressDialog(null)
     setLongPressTarget(null)
   }, [execCommand, showToast, getPaneInfo])
 
@@ -867,6 +876,8 @@ export default function FilesPage() {
     const srcPath = src.state.currentPath + '/' + sourceFile.name
     const tgtPath = tgt.state.currentPath + '/' + sourceFile.name
     try {
+      if (src.serverId !== tgt.serverId) throw new Error('移动目标需要与源文件位于同一服务器')
+      setProgressDialog({ title: '移动中...', message: `${sourceFile.name} → ${targetPane === 'left' ? '左侧面板' : '右侧面板'}` })
       await execCommand(src.serverId, `mv ${JSON.stringify(srcPath)} ${JSON.stringify(tgtPath)}`)
       showToast(`已移动 ${sourceFile.name}`, 'success')
       loadFiles(src.serverId, src.state.currentPath, sourcePane === 'left' ? setTabState : setRightState)
@@ -876,6 +887,7 @@ export default function FilesPage() {
     } catch (e: any) {
       showToast(`移动失败: ${e.message || e}`, 'error')
     }
+    setProgressDialog(null)
     setLongPressTarget(null)
   }, [execCommand, showToast, getPaneInfo])
 
@@ -1375,43 +1387,26 @@ export default function FilesPage() {
 
       {/* 长按菜单 */}
       {longPressTarget && (
-        <div className="fixed inset-0 z-[2000]">
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/30" onClick={() => { setLongPressTarget(null); setSelectedNames([]) }} />
-          <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl animate-slide-up">
-            <div className="sticky top-0 bg-white pt-3 pb-2 px-4 flex items-center justify-between border-b border-gray-100">
+          <div className="relative w-full max-w-md bg-white rounded-2xl animate-scale-in shadow-xl">
+            <div className="bg-white px-5 pt-4 pb-3 flex items-center justify-between border-b border-gray-100">
               <h3 className="text-sm font-semibold text-gray-800 truncate">{longPressTarget.file.name}</h3>
               <button onClick={() => { setLongPressTarget(null); setSelectedNames([]) }}><X size={18} className="text-gray-400" /></button>
             </div>
-            <div className="px-4 py-2 space-y-0.5">
-              {longPressTarget.file.type === 'directory' ? (
-                <button onClick={() => { navigateTo(longPressTarget.file.name, longPressTarget.pane); setLongPressTarget(null) }}
-                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-gray-50"><Folder size={16} className="text-blue-400" /><span className="text-sm text-gray-700">打开目录</span></button>
-              ) : (
-                <>
-                  {isImageFile(longPressTarget.file.name) && (
-                    <button onClick={() => { openImageViewer(longPressTarget.file, longPressTarget.pane); setLongPressTarget(null) }}
-                      className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-gray-50"><ImageIcon size={16} className="text-sky-400" /><span className="text-sm text-gray-700">查看图片</span></button>
-                  )}
-                  {isTextEditableFile(longPressTarget.file.name) && (
-                    <button onClick={() => { openEditor(longPressTarget.file, longPressTarget.pane); setLongPressTarget(null) }}
-                      className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-gray-50"><FileEdit size={16} className="text-emerald-400" /><span className="text-sm text-gray-700">编辑文件</span></button>
-                  )}
-                  {isArchiveFile(longPressTarget.file.name) && (
-                    <button onClick={() => { enterArchive(longPressTarget.file, longPressTarget.pane); setLongPressTarget(null) }}
-                      className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-gray-50"><Archive size={16} className="text-amber-400" /><span className="text-sm text-gray-700">浏览压缩包</span></button>
-                  )}
-                </>
-              )}
-              <button onClick={() => { downloadFromPane(longPressTarget.file, longPressTarget.pane); setLongPressTarget(null) }}
-                className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-gray-50"><Download size={16} className="text-gray-400" /><span className="text-sm text-gray-700">下载</span></button>
-              <button onClick={() => { setShowDeleteConfirm({ ...longPressTarget }); setLongPressTarget(null) }}
-                className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-red-50"><Trash2 size={16} className="text-red-400" /><span className="text-sm text-red-500">删除</span></button>
-              <button onClick={() => { setRenameTarget({ ...longPressTarget }); setNewFileName(longPressTarget.file.name); setLongPressTarget(null) }}
-                className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-gray-50"><PenLine size={16} className="text-gray-400" /><span className="text-sm text-gray-700">重命名</span></button>
-              <button onClick={() => { showPropertySheet(longPressTarget.file, longPressTarget.pane); setLongPressTarget(null) }}
-                className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-gray-50"><FileText size={16} className="text-gray-400" /><span className="text-sm text-gray-700">属性</span></button>
-              <button onClick={() => { compressTargetRef.current = longPressTarget; setCompressOpen(true); setLongPressTarget(null) }}
-                className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-gray-50"><FolderArchive size={16} className="text-gray-400" /><span className="text-sm text-gray-700">压缩</span></button>
+            <div className="grid grid-cols-2 gap-1 p-3">
+              {[
+                { icon: Copy, label: `复制 → ${longPressTarget.pane === 'left' ? '右侧' : '左侧'}`, action: () => _copyFile(longPressTarget.file, longPressTarget.pane, longPressTarget.pane === 'left' ? 'right' : 'left') },
+                { icon: MoveRight, label: `移动 → ${longPressTarget.pane === 'left' ? '右侧' : '左侧'}`, action: () => _moveFile(longPressTarget.file, longPressTarget.pane, longPressTarget.pane === 'left' ? 'right' : 'left') },
+                { icon: FileEdit, label: '编辑', disabled: !isTextEditableFile(longPressTarget.file.name), action: () => { openEditor(longPressTarget.file, longPressTarget.pane); setLongPressTarget(null) } },
+                { icon: PenLine, label: '重命名', action: () => { setRenameTarget({ ...longPressTarget }); setNewFileName(longPressTarget.file.name); setLongPressTarget(null) } },
+                { icon: FolderArchive, label: '压缩', action: () => { compressTargetRef.current = longPressTarget; setCompressName(`${longPressTarget.file.name}.zip`); setCompressFormat('zip'); setCompressOpen(true); setLongPressTarget(null) } },
+                { icon: Download, label: '下载', action: () => { downloadFromPane(longPressTarget.file, longPressTarget.pane); setLongPressTarget(null) } },
+                { icon: FileText, label: '属性', action: () => { showPropertySheet(longPressTarget.file, longPressTarget.pane); setLongPressTarget(null) } },
+                { icon: Trash2, label: '删除', danger: true, action: () => { setShowDeleteConfirm({ ...longPressTarget }); setLongPressTarget(null) } },
+              ].map(({ icon: Icon, label, action, disabled, danger }) => (
+                <button key={label} disabled={disabled} onClick={action} className={`flex items-center gap-2 rounded-xl px-3 py-3 text-left ${danger ? 'text-red-500 hover:bg-red-50' : disabled ? 'text-gray-300' : 'text-gray-700 hover:bg-gray-50'}`}><Icon size={17} /><span className="text-sm">{label}</span></button>
+              ))}
             </div>
           </div>
         </div>
@@ -1511,7 +1506,11 @@ export default function FilesPage() {
         <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/30" onClick={() => setCompressOpen(false)} />
           <div className="relative bg-white rounded-2xl w-full max-w-xs p-5 animate-scale-in shadow-xl">
-            <h3 className="text-sm font-semibold text-gray-800 mb-3">压缩</h3>
+            <h3 className="text-lg font-semibold text-center text-gray-800 mb-4">创建压缩文件</h3>
+            <div className="mb-2">
+              <label className="text-[10px] text-gray-400 block mb-1">文件名</label>
+              <input value={compressName} onChange={e => setCompressName(e.target.value)} className="w-full bg-gray-50 rounded-xl px-3 py-2.5 text-sm text-gray-800 border border-gray-200 outline-none" />
+            </div>
             <div className="mb-2">
               <label className="text-[10px] text-gray-400 block mb-1">格式</label>
               <select value={compressFormat} onChange={e => setCompressFormat(e.target.value as any)}
@@ -1520,14 +1519,14 @@ export default function FilesPage() {
               </select>
             </div>
             <div className="mb-2">
-              <label className="text-[10px] text-gray-400 block mb-1">级别</label>
+              <label className="text-[10px] text-gray-400 block mb-1">压缩级别</label>
               <select value={compressLevel} onChange={e => setCompressLevel(e.target.value as any)}
                 className="w-full bg-gray-50 rounded-xl px-3 py-2.5 text-sm text-gray-700 border border-gray-200 outline-none">
-                <option value="store">Store</option><option value="fast">Fast</option><option value="normal">Normal</option><option value="max">Max</option>
+                <option value="store">仅存储</option><option value="fast">快速压缩</option><option value="normal">标准压缩</option><option value="max">最大压缩</option>
               </select>
             </div>
             <div className="mb-4">
-              <label className="text-[10px] text-gray-400 block mb-1">密码 (可选)</label>
+              <label className="text-[10px] text-gray-400 block mb-1">密码</label>
               <div className="relative">
                 <input value={compressPassword} onChange={e => setCompressPassword(e.target.value)}
                   placeholder="留空不加密" type={compressShowPass ? 'text' : 'password'}
@@ -1538,7 +1537,7 @@ export default function FilesPage() {
             </div>
             <div className="flex gap-2">
               <button onClick={() => setCompressOpen(false)} className="flex-1 py-2.5 rounded-xl bg-gray-100 text-sm text-gray-600">取消</button>
-              <button onClick={() => { handleCompress(); setCompressOpen(false) }} className="flex-1 py-2.5 rounded-xl bg-blue-50 text-sm text-blue-600">开始压缩</button>
+              <button onClick={() => { handleCompress(); setCompressOpen(false) }} disabled={!compressName.trim()} className="flex-1 py-2.5 rounded-xl bg-blue-600 text-sm text-white disabled:opacity-50">确定</button>
             </div>
           </div>
         </div>
@@ -1593,12 +1592,12 @@ export default function FilesPage() {
         <div className="fixed inset-0 z-[2000] bg-white flex flex-col">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
             <button onClick={() => setEditingFile(null)} className="p-2 rounded-lg hover:bg-gray-100"><ChevronLeft size={20} className="text-gray-600" /></button>
-            <span className="text-sm font-medium text-gray-800 truncate mx-2">{editingFile.file.name}</span>
-            <button onClick={saveEditorFile} className="p-2 rounded-lg bg-blue-50 text-blue-600"><Save size={18} /></button>
+            <span className="text-sm font-medium text-gray-800 truncate mx-2">{editingFile.name}</span>
+            <button onClick={saveEditorFile} disabled={editingFile.isTruncated} className="p-2 rounded-lg bg-blue-50 text-blue-600 disabled:opacity-40"><Save size={18} /></button>
           </div>
           <textarea value={editingFile.content}
             onChange={e => setEditingFile((prev: typeof editingFile) => prev ? { ...prev, content: e.target.value } : null)}
-            className="flex-1 w-full bg-gray-50 px-4 py-3 text-sm text-gray-800 font-mono resize-none outline-none" spellCheck={false} />
+            className="flex-1 w-full bg-gray-50 px-4 py-3 text-sm text-gray-800 font-mono resize-none outline-none" spellCheck={false} readOnly={editingFile.isTruncated} />
           <div className="px-4 py-2 text-[10px] text-gray-400 text-right border-t border-gray-100">
             {editingFile.content.split('\n').length} 行 | {(new Blob([editingFile.content]).size / 1024).toFixed(1)} KB
           </div>
@@ -1607,20 +1606,29 @@ export default function FilesPage() {
 
       {/* 属性 */}
       {propertySheet && (
-        <div className="fixed inset-0 z-[2000]">
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/30" onClick={() => setPropertySheet(null)} />
-          <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl animate-slide-up">
-            <div className="sticky top-0 bg-white pt-3 pb-2 px-4 flex items-center justify-between border-b border-gray-100">
-              <h3 className="text-sm font-semibold text-gray-800">文件属性</h3>
-              <button onClick={() => setPropertySheet(null)}><X size={18} className="text-gray-400" /></button>
-            </div>
-            <div className="px-4 py-3 space-y-2">
+          <div className="relative w-full max-w-sm bg-white rounded-2xl animate-scale-in shadow-xl p-5">
+            <h3 className="text-lg font-semibold text-center text-gray-800 mb-4">属性</h3>
+            <div className="space-y-2">
               <Row label="名称" value={propertySheet.file.name} />
+              <Row label="目录" value={propertySheet.currentPath || '/'} mono />
               <Row label="类型" value={propertySheet.file.type === 'directory' ? '目录' : propertySheet.file.name.split('.').pop()?.toUpperCase() || '文件'} />
               <Row label="大小" value={String(propertySheet.file.size)} />
               <Row label="修改时间" value={propertySheet.file.modified ? fmtTime(propertySheet.file.modified) : '-'} />
               <Row label="权限" value={propertySheet.file.permissions || '-'} mono />
-              <Row label="路径" value={`${(propertySheet as any).currentPath || ''}/${propertySheet.file.name}`} mono />
+              <Row label="所有者" value={propertySheet.file.owner || '-'} />
+              <Row label="用户组" value={propertySheet.file.group || '-'} />
+            </div>
+            {propertyMoreOpen && (
+              <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-gray-50 p-2">
+                <button onClick={() => { setPermissionsDialog({ file: propertySheet.file, pane: propertySheet.pane as 'left' | 'right' }); setPropertyMoreOpen(false) }} className="rounded-lg bg-white px-3 py-2 text-xs text-gray-700 shadow-sm">文件权限</button>
+                <button onClick={async () => { const { serverId, state } = getPaneInfo(propertySheet.pane as 'left' | 'right'); if (!serverId) return; setProgressDialog({ title: '修改时间中...', message: propertySheet.file.name }); await execCommand(serverId, `touch -m ${JSON.stringify(state.currentPath + '/' + propertySheet.file.name)}`); loadFiles(serverId, state.currentPath, propertySheet.pane === 'left' ? setTabState : setRightState); setProgressDialog(null); setPropertyMoreOpen(false) }} className="rounded-lg bg-white px-3 py-2 text-xs text-gray-700 shadow-sm">修改时间</button>
+              </div>
+            )}
+            <div className="mt-5 flex items-center justify-between">
+              <button onClick={() => setPropertyMoreOpen(value => !value)} className="text-sm text-[#5865d8]">... 更多</button>
+              <button onClick={() => setPropertySheet(null)} className="rounded-xl bg-[#5865d8] px-5 py-2 text-sm text-white">关闭</button>
             </div>
           </div>
         </div>
