@@ -22,7 +22,7 @@ function StatusBarController() {
   useEffect(() => {
     const isFilesPage = location.pathname.startsWith('/files')
     StatusBar.setStyle({ style: isFilesPage && !isDark ? Style.Dark : isDark ? Style.Dark : Style.Light })
-    StatusBar.setBackgroundColor({ color: isFilesPage ? (isDark ? '#2b2b2b' : '#e2e8f0') : (isDark ? '#0f0f1a' : '#FFFBFE') })
+    StatusBar.setBackgroundColor({ color: isFilesPage ? (isDark ? '#2b2b2b' : '#e9eef6') : (isDark ? '#0f0f1a' : '#FFFBFE') })
   }, [isDark, location.pathname])
 
   return null

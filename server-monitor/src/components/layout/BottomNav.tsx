@@ -12,6 +12,7 @@ const tabs = [
 export default function BottomNav({ hidden = false }: { hidden?: boolean }) {
   const location = useLocation()
   const lastServersTapRef = useRef(0)
+  const filesPage = location.pathname.startsWith('/files')
 
   const handleServersTap = (active: boolean) => {
     if (!active) return
@@ -25,8 +26,8 @@ export default function BottomNav({ hidden = false }: { hidden?: boolean }) {
   }
 
   return (
-    <nav className={`shrink-0 border-t border-border/70 bg-surface-card safe-bottom ${hidden ? 'hidden' : ''}`}>
-      <div className="px-2 py-1.5">
+    <nav className={`shrink-0 safe-bottom ${filesPage ? 'h-[88px] border-t border-[#e6e9f0] bg-white' : 'border-t border-border/70 bg-surface-card'} ${hidden ? 'hidden' : ''}`}>
+      <div className={filesPage ? 'h-full px-2 py-1' : 'px-2 py-1.5'}>
         <div className="flex items-center justify-around">
           {tabs.map(({ to, icon: Icon, label }) => {
             const active = location.pathname === to ||
@@ -36,19 +37,18 @@ export default function BottomNav({ hidden = false }: { hidden?: boolean }) {
                 key={to}
                 to={to}
                 onClick={() => to === '/servers' && handleServersTap(active)}
-                className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all duration-200 min-w-0 ${
-                  active
-                    ? 'text-primary-light bg-primary/15 shadow-[0_0_12px_rgba(88,166,255,0.15)]'
-                    : 'text-text-muted hover:text-text-secondary'
-                }`}
+                className={filesPage
+                  ? `flex h-[72px] min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-3 transition-all duration-200 ${active ? 'text-[#6670f5]' : 'text-[#a0a8b8]'}`
+                  : `flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all duration-200 min-w-0 ${active ? 'text-primary-light bg-primary/15 shadow-[0_0_12px_rgba(88,166,255,0.15)]' : 'text-text-muted hover:text-text-secondary'}`
+                }
               >
-                <div className={`relative ${active ? 'animate-pulse-glow rounded-full' : ''}`}>
-                  <Icon size={22} strokeWidth={active ? 2.5 : 1.8} />
+                <div className={`relative flex h-10 w-10 items-center justify-center ${filesPage && active ? 'rounded-2xl bg-[#eef0ff] shadow-[0_0_14px_rgba(102,112,245,0.18)]' : active ? 'animate-pulse-glow rounded-full' : ''}`}>
+                  <Icon size={filesPage ? 24 : 22} strokeWidth={active ? 2.4 : 1.8} />
                   {active && (
                     <span className="absolute -top-1 -right-1 w-1.5 h-1.5 bg-primary rounded-full" />
                   )}
                 </div>
-                <span className={`text-[10px] font-medium ${active ? 'opacity-100' : 'opacity-60'}`}>
+                <span className={`text-[10px] font-medium ${filesPage ? 'opacity-100' : active ? 'opacity-100' : 'opacity-60'}`}>
                   {label}
                 </span>
               </NavLink>

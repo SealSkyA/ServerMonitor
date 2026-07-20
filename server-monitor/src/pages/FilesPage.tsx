@@ -1,11 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useSearchParams } from 'react-router-dom'
-import { Folder, File as LucideFile, ArrowUp, ArrowLeft, ArrowRight, Search, Upload, FileText, FolderPlus, Trash2, Loader2, Server, Download, X, CheckCircle, XCircle, ArrowUpCircle, ArrowDownCircle, Save, FileCode, Copy, RefreshCw, Menu, Archive, Bookmark, MoveRight, ListFilter, Eye, EyeOff, ChevronRight, Plus, Minus, Maximize, Check, PenLine, FolderArchive, ImageIcon, Zap, FileEdit, Wrench, ChevronLeft } from 'lucide-react'
+import { Folder, File as LucideFile, ArrowUp, ArrowLeft, ArrowRight, Search, Upload, FileText, FolderPlus, Trash2, Loader2, Server, Download, X, CheckCircle, XCircle, ArrowUpCircle, ArrowDownCircle, Save, FileCode, Copy, RefreshCw, Menu, MoreVertical, Archive, Bookmark, MoveRight, ListFilter, Eye, EyeOff, ChevronRight, Plus, Minus, Maximize, Check, PenLine, FolderArchive, ImageIcon, Zap, FileEdit, Wrench, ChevronLeft } from 'lucide-react'
 import { useToast } from '../components/ui/Toast'
 import { useServers } from '../store/ServerContext'
 import { transferManager } from '../services/transferManager'
-import PageHeader from '../components/layout/PageHeader'
 
 const LARGE_FILE_CHUNK_BYTES = 100000
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg', '.ico', '.tiff', '.tif', '.heic', '.heif'])
@@ -231,7 +230,7 @@ export default function FilesPage() {
   const [searchParams] = useSearchParams()
   const paramId = searchParams.get('id') || ''
 
-  const { servers, connectServer: _connectServer, disconnectServer: _disconnectServer, isConnected, execCommand } = useServers()
+  const { servers, connectServer, disconnectServer: _disconnectServer, isConnected, execCommand } = useServers()
   const { showToast } = useToast()
 
   const suppressRowClick = useRef(false)
@@ -315,6 +314,7 @@ export default function FilesPage() {
   const [sortOrder, setSortOrder] = useState<string>('asc')
   const [sortDialogOpen, setSortDialogOpen] = useState(false)
   const [serverDrawerOpen, setServerDrawerOpen] = useState(false)
+  const [serverSearch, setServerSearch] = useState('')
   const [toolsOpen, setToolsOpen] = useState(false)
   const [searchDialogOpen, setSearchDialogOpen] = useState(false)
   const [forwardHistory, setForwardHistory] = useState<Record<string, string[]>>({ left: [], right: [] })
@@ -324,6 +324,10 @@ export default function FilesPage() {
 
   const activeServer = servers.find(s => s.id === activeTab)
   const connectedServers = servers.filter(s => isConnected(s.id))
+  const drawerServers = servers.filter(server => {
+    const query = serverSearch.trim().toLowerCase()
+    return !query || `${server.name} ${server.host} ${server.username}`.toLowerCase().includes(query)
+  })
 
   useEffect(() => {
     if (!activeTab && !paramId && servers.length > 0) {
@@ -1055,24 +1059,6 @@ export default function FilesPage() {
   }, [rightServerId, tabState.currentPath, activeTab, showHidden, execCommand])
 
 
-  if (!connectedServers.length) {
-    return (
-      <div className="flex h-full min-h-0 flex-col bg-[#f0f2f5]">
-        <header className="shrink-0 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3">
-          <button className="p-1 rounded-lg"><Menu size={22} className="text-gray-500" /></button>
-          <span className="text-base font-semibold text-gray-800">请连接服务器</span>
-          <div className="flex-1" />
-          <button className="p-1 rounded-lg"><Menu size={20} className="text-gray-400" /></button>
-        </header>
-        <div className="flex-1 flex flex-col items-center justify-center bg-white">
-          <Server size={40} className="text-gray-300 mb-3" />
-          <p className="text-sm text-gray-400">未连接任何服务器</p>
-          <p className="text-xs text-gray-400 mt-1">请先添加并连接到一台服务器</p>
-        </div>
-      </div>
-    )
-  }
-
   const fmtTime = (ts: number) => {
     if (!ts) return ''
     const d = new Date(ts * 1000)
@@ -1084,65 +1070,42 @@ export default function FilesPage() {
   const rightFiles = sortFiles(rightState.files)
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[#f0f2f5]">
-      {/* 顶部标题栏 */}
-      <header className="shrink-0 bg-white border-b border-gray-100 px-4 py-2.5 flex items-center gap-3">
-        <button onClick={() => setServerDrawerOpen(true)} className="p-1 rounded-lg">
-          <Menu size={22} className="text-gray-500" />
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-white text-[#1f2632]">
+      <header className="flex h-[76px] shrink-0 items-center gap-3 bg-[#e9eef6] px-5">
+        <button
+          type="button"
+          aria-label="打开服务器列表"
+          onClick={() => { setServerSearch(''); setServerDrawerOpen(true) }}
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-[#2b3442] active:bg-[#dce3ef]"
+        >
+          <Menu size={27} strokeWidth={2.2} />
         </button>
-        <div className="flex-1 min-w-0 flex items-center gap-2">
-          <span className="text-base font-semibold text-gray-800 truncate">
-            {activeServer?.name || '请连接服务器'}
-          </span>
-          {activeServer?.host && (
-            <span className="text-xs text-gray-400">{activeServer.host}</span>
-          )}
-        </div>
-        <button onClick={() => setToolsOpen(true)} className="p-1 rounded-lg">
-          <Menu size={20} className="text-gray-400" />
+        <h1 className="min-w-0 flex-1 truncate text-[23px] font-bold tracking-normal text-[#1f2632]">
+          {activeServer?.name || '请连接服务器'}
+        </h1>
+        <button
+          type="button"
+          aria-label="打开文件工具菜单"
+          onClick={() => setToolsOpen(value => !value)}
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-[#2b3442] active:bg-[#dce3ef]"
+        >
+          <MoreVertical size={25} strokeWidth={2.2} />
         </button>
       </header>
 
-      {/* 双栏文件面板 */}
-      <div className="flex-1 min-h-0 flex">
-        {/* 左侧面板 */}
-        <div className="flex-1 min-w-0 flex flex-col bg-white border-r border-gray-100">
-          <div className="shrink-0 px-2.5 py-2 flex items-center gap-1 border-b border-gray-50">
-            <button onClick={() => setNewFolderDialogOpen(true)} className="p-1 rounded-md hover:bg-gray-100">
-              <FolderPlus size={15} className="text-blue-500" />
-            </button>
-            <button onClick={() => handleUploadClick('left')} className="p-1 rounded-md hover:bg-gray-100">
-              <Upload size={15} className="text-sky-500" />
-            </button>
-            <button onClick={() => setSearchDialogOpen(true)} className="p-1 rounded-md hover:bg-gray-100">
-              <Search size={15} className="text-purple-500" />
-            </button>
-            <button onClick={() => setSortDialogOpen(true)} className="p-1 rounded-md hover:bg-gray-100">
-              <ListFilter size={15} className="text-emerald-500" />
-            </button>
-            <button onClick={() => setShowHidden(!showHidden)} className={`p-1 rounded-md hover:bg-gray-100 ${showHidden ? 'bg-blue-50' : ''}`}>
-              <EyeOff size={15} className={showHidden ? 'text-blue-500' : 'text-gray-400'} />
-            </button>
-            <div className="flex-1" />
-            <button onClick={() => setShowQuickActions(true)} className="p-1 rounded-md hover:bg-gray-100">
-              <Bookmark size={15} className="text-amber-500" />
-            </button>
+      <main className="flex min-h-0 flex-1 bg-white">
+        <section
+          onClick={() => setActivePane('left')}
+          className={`relative flex min-w-0 flex-1 flex-col ${activePane === 'left' ? '' : 'bg-[#fcfcfd]'}`}
+        >
+          <div className="flex h-[68px] shrink-0 items-center gap-2 px-3">
+            <button onClick={() => { setNewFileType('file'); setNewFileName(''); setNewFileDialogOpen(true) }} className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#eef0f5] bg-[#f7f6fb] text-[#bfc6d8] shadow-sm"><FileText size={19} strokeWidth={1.7} /></button>
+            <button onClick={() => { setNewFileType('folder'); setNewFileName(''); setNewFileDialogOpen(true) }} className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#edf1f3] bg-[#f4fbfd] text-[#a6dce8] shadow-sm"><FolderPlus size={19} strokeWidth={1.7} /></button>
+            <button onClick={() => handleUploadClick('left')} className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#edf1f7] bg-[#f5f9ff] text-[#9ab8f3] shadow-sm"><Upload size={19} strokeWidth={1.7} /></button>
+            <button onClick={() => setShowQuickActions(true)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#f0eef8] bg-[#f8f5ff] text-[#c7b6f4] shadow-sm"><FolderArchive size={19} strokeWidth={1.7} /></button>
           </div>
 
-          <div className="shrink-0 px-3 py-1 border-b border-gray-50">
-            <span className="text-[11px] text-gray-400 font-mono">/</span>
-            {tabState.currentPath.split('/').filter(Boolean).map((seg, i, arr) => (
-              <span key={i} className="text-[11px] text-gray-400 font-mono">
-                <span className="text-gray-300">/</span>
-                <button onClick={() => navigateTo('/' + arr.slice(0, i + 1).join('/'), 'left')}
-                  className={i === arr.length - 1 ? 'text-blue-600' : 'hover:text-gray-600'}>
-                  {seg}
-                </button>
-              </span>
-            ))}
-          </div>
-
-          <div className="flex-1 overflow-y-auto px-1.5 py-1">
+          <div className="flex-1 overflow-y-auto px-2 pb-3 pt-1">
             {archiveBrowse?.pane === 'left' ? (
               archiveLoading ? (
                 <div className="flex justify-center py-16"><Loader2 size={20} className="animate-spin text-gray-400" /></div>
@@ -1177,9 +1140,8 @@ export default function FilesPage() {
             ) : tabState.loading ? (
               <div className="flex justify-center py-16"><Loader2 size={20} className="animate-spin text-gray-400" /></div>
             ) : leftFiles.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16">
-                <Folder size={32} className="text-gray-300 mb-2" />
-                <p className="text-xs text-gray-400">目录为空</p>
+              <div className="flex h-[28%] min-h-[130px] items-center justify-center">
+                <p className="text-[20px] font-medium text-[#8e97a8]">目录为空</p>
               </div>
             ) : (
               leftFiles.map(file => (
@@ -1202,50 +1164,25 @@ export default function FilesPage() {
               ))
             )}
           </div>
-        </div>
+        </section>
 
-        {/* 右侧面板 */}
-        <div className="flex-1 min-w-0 flex flex-col bg-white">
-          <div className="shrink-0 px-2.5 py-2 flex items-center gap-1 border-b border-gray-50">
-            <button onClick={() => rightServerId && isConnected(rightServerId) && syncActivePathToOtherPane()}
-              className={`p-1 rounded-md ${rightServerId ? 'hover:bg-gray-100' : ''}`}>
-              <Copy size={15} className={rightServerId ? 'text-purple-500' : 'text-gray-300'} />
-            </button>
-            <button onClick={() => handleUploadClick('right')}
-              className={`p-1 rounded-md ${rightServerId ? 'hover:bg-gray-100' : ''}`}>
-              <Upload size={15} className={rightServerId ? 'text-sky-500' : 'text-gray-300'} />
-            </button>
-            <div className="flex-1" />
-            {!rightServerId && connectedServers.length > 1 && (
-              <button onClick={() => setServerDrawerOpen(true)}
-                className="text-[10px] text-gray-400 px-2 py-1 rounded hover:bg-gray-100">+ 选择服务器</button>
-            )}
+        <div className="w-px shrink-0 bg-[#d7dce4] shadow-[0_0_8px_rgba(54,66,85,0.10)]" />
+
+        <section
+          onClick={() => setActivePane('right')}
+          className={`relative flex min-w-0 flex-1 flex-col ${activePane === 'right' ? '' : 'bg-[#fcfcfd]'}`}
+        >
+          <div className="flex h-[68px] shrink-0 items-center gap-2 px-3">
+            <button onClick={() => { setNewFileType('file'); setNewFileName(''); setNewFileDialogOpen(true) }} className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#eef0f5] bg-[#f7f6fb] text-[#bfc6d8] shadow-sm"><FileText size={19} strokeWidth={1.7} /></button>
+            <button onClick={() => { setNewFileType('folder'); setNewFileName(''); setNewFileDialogOpen(true) }} className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#edf1f3] bg-[#f4fbfd] text-[#a6dce8] shadow-sm"><FolderPlus size={19} strokeWidth={1.7} /></button>
+            <button onClick={() => handleUploadClick('right')} className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#edf1f7] bg-[#f5f9ff] text-[#9ab8f3] shadow-sm"><Upload size={19} strokeWidth={1.7} /></button>
+            <button onClick={() => { setActivePane('right'); setServerSearch(''); setServerDrawerOpen(true) }} className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#f0eef8] bg-[#f8f5ff] text-[#c7b6f4] shadow-sm"><FolderArchive size={19} strokeWidth={1.7} /></button>
           </div>
 
-          <div className="shrink-0 px-3 py-1 border-b border-gray-50">
-            {rightServerId && isConnected(rightServerId) ? (
-              <>
-                <span className="text-[11px] text-gray-400 font-mono">/</span>
-                {rightState.currentPath.split('/').filter(Boolean).map((seg, i, arr) => (
-                  <span key={i} className="text-[11px] text-gray-400 font-mono">
-                    <span className="text-gray-300">/</span>
-                    <button onClick={() => navigateTo('/' + arr.slice(0, i + 1).join('/'), 'right')}
-                      className={i === arr.length - 1 ? 'text-blue-600' : 'hover:text-gray-600'}>
-                      {seg}
-                    </button>
-                  </span>
-                ))}
-              </>
-            ) : (
-              <span className="text-[11px] text-gray-300">选择右侧面板的服务器</span>
-            )}
-          </div>
-
-          <div className="flex-1 overflow-y-auto px-1.5 py-1">
+          <div className="flex-1 overflow-y-auto px-2 pb-3 pt-1">
             {!rightServerId ? (
-              <div className="flex flex-col items-center justify-center py-16">
-                <Server size={32} className="text-gray-300 mb-2" />
-                <p className="text-xs text-gray-400">选择一台服务器</p>
+              <div className="flex h-[28%] min-h-[130px] items-center justify-center">
+                <p className="text-[20px] font-medium text-[#8e97a8]">目录为空</p>
               </div>
             ) : archiveBrowse?.pane === 'right' ? (
               archiveLoading ? (
@@ -1281,9 +1218,8 @@ export default function FilesPage() {
             ) : rightState.loading ? (
               <div className="flex justify-center py-16"><Loader2 size={20} className="animate-spin text-gray-400" /></div>
             ) : rightFiles.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16">
-                <Folder size={32} className="text-gray-300 mb-2" />
-                <p className="text-xs text-gray-400">目录为空</p>
+              <div className="flex h-[28%] min-h-[130px] items-center justify-center">
+                <p className="text-[20px] font-medium text-[#8e97a8]">目录为空</p>
               </div>
             ) : (
               rightFiles.map(file => (
@@ -1306,33 +1242,31 @@ export default function FilesPage() {
               ))
             )}
           </div>
-        </div>
-      </div>
+        </section>
+      </main>
 
-      {/* 底部操作栏 */}
-      <footer className="shrink-0 bg-white border-t border-gray-100 px-8 py-2.5 flex items-center justify-between">
+      <footer className="flex h-[96px] shrink-0 items-center justify-between border-t border-[#e6e9f0] bg-white px-8">
         <button onClick={() => navigateBack(activePane)}
           disabled={(activePane === 'left' ? backStack : rightBackStack).length === 0}
-          className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-25">
-          <ArrowLeft size={20} className="text-gray-500" />
+          className="flex h-12 w-12 items-center justify-center rounded-xl text-[#d3d7e1] active:bg-[#f3f5f8] disabled:opacity-70">
+          <ArrowLeft size={26} strokeWidth={2} />
         </button>
         <button onClick={() => navigateForward(activePane)}
           disabled={!(forwardHistory[activePane]?.length > 0)}
-          className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-25">
-          <ArrowRight size={20} className="text-gray-500" />
+          className="flex h-12 w-12 items-center justify-center rounded-xl text-[#d3d7e1] active:bg-[#f3f5f8] disabled:opacity-70">
+          <ArrowRight size={26} strokeWidth={2} />
         </button>
         <button onClick={() => { setNewFileDialogOpen(true); setNewFileName(''); setNewFileType('file') }}
-          className="p-2 rounded-lg hover:bg-gray-100">
-          <Plus size={22} className="text-gray-600" />
-        </button>
-        <button disabled={!rightServerId || !isConnected(rightServerId)}
-          onClick={() => syncActivePathToOtherPane()}
-          className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-25">
-          <Copy size={20} className="text-gray-500" />
+          className="flex h-12 w-12 items-center justify-center rounded-xl text-[#68738a] active:bg-[#f3f5f8]">
+          <Plus size={31} strokeWidth={2} />
         </button>
         <button onClick={() => { if (activeTab) { loadFiles(activeTab, tabState.currentPath, setTabState); if (rightServerId) loadFiles(rightServerId, rightState.currentPath, setRightState) } }}
-          className="p-2 rounded-lg hover:bg-gray-100">
-          <RefreshCw size={20} className="text-gray-500" />
+          className="flex h-12 w-12 items-center justify-center rounded-xl text-[#8c96a8] active:bg-[#f3f5f8]">
+          <RefreshCw size={24} strokeWidth={1.9} />
+        </button>
+        <button onClick={() => navigateToParent(activePane)}
+          className="flex h-12 w-12 items-center justify-center rounded-xl text-[#8c96a8] active:bg-[#f3f5f8]">
+          <ArrowUp size={26} strokeWidth={2} />
         </button>
       </footer>
 
@@ -1341,42 +1275,61 @@ export default function FilesPage() {
       {/* 服务器选择 */}
       {serverDrawerOpen && (
         <div className="fixed inset-0 z-[2000]">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setServerDrawerOpen(false)} />
-          <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl max-h-[60vh] overflow-y-auto animate-slide-up">
-            <div className="sticky top-0 bg-white pt-3 pb-2 px-4 flex items-center justify-between border-b border-gray-100">
-              <h3 className="text-sm font-semibold text-gray-800">选择服务器</h3>
-              <button onClick={() => setServerDrawerOpen(false)}><X size={18} className="text-gray-400" /></button>
+          <div className="absolute inset-0 bg-[#1f2632]/25" onClick={() => setServerDrawerOpen(false)} />
+          <aside className="absolute inset-y-0 left-0 flex w-[84vw] max-w-[360px] flex-col bg-white shadow-2xl animate-slide-right">
+            <div className="flex h-[76px] shrink-0 items-center gap-2 bg-[#e9eef6] px-4">
+              <button aria-label="关闭服务器抽屉" onClick={() => setServerDrawerOpen(false)} className="flex h-10 w-10 items-center justify-center rounded-xl text-[#2b3442] active:bg-[#dce3ef]"><ChevronLeft size={26} /></button>
+              <div className="min-w-0 flex-1">
+                <h2 className="text-lg font-bold text-[#1f2632]">选择服务器</h2>
+                <p className="text-xs text-[#748096]">{activePane === 'left' ? '左侧文件面板' : '右侧文件面板'}</p>
+              </div>
             </div>
-            <div className="px-4 py-3 space-y-2">
-              <p className="text-[10px] text-gray-400">左侧面板</p>
-              {connectedServers.map(s => (
-                <div key={s.id} className="flex items-center gap-2">
-                  <button onClick={() => { setActiveTab(s.id); setActivePane('left'); setServerDrawerOpen(false) }}
-                    className={`flex-1 flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left ${s.id === activeTab && activePane === 'left' ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
-                    <Server size={14} className={s.id === activeTab && activePane === 'left' ? 'text-blue-500' : 'text-gray-400'} />
-                    <div className="min-w-0"><p className="text-xs text-gray-700 truncate">{s.name}</p><p className="text-[10px] text-gray-400">{s.host}</p></div>
-                  </button>
-                  <button onClick={() => { setRightServerId(rightServerId === s.id ? '' : s.id); if (rightServerId !== s.id) setActivePane('right'); setServerDrawerOpen(false) }}
-                    className={`px-2.5 py-1.5 rounded-lg text-[10px] font-medium ${rightServerId === s.id ? 'bg-blue-50 text-blue-600' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'}`}>
-                    {rightServerId === s.id ? '取下' : '右侧'}
-                  </button>
-                </div>
-              ))}
+            <div className="shrink-0 px-4 py-4">
+              <label className="flex h-11 items-center gap-2 rounded-xl bg-[#f4f6fa] px-3 text-[#7d8798]">
+                <Search size={18} />
+                <input value={serverSearch} onChange={event => setServerSearch(event.target.value)} placeholder="搜索服务器" autoFocus className="min-w-0 flex-1 bg-transparent text-sm text-[#1f2632] outline-none placeholder:text-[#9ca5b5]" />
+                {serverSearch && <button aria-label="清除搜索" onClick={() => setServerSearch('')}><X size={16} /></button>}
+              </label>
             </div>
-          </div>
+            <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-6">
+              {drawerServers.map(server => {
+                const selected = activePane === 'left' ? server.id === activeTab : server.id === rightServerId
+                const online = isConnected(server.id)
+                return (
+                  <button
+                    key={server.id}
+                    onClick={async () => {
+                      if (!online) {
+                        const result = await connectServer(server.id)
+                        if (!result.success) {
+                          showToast(result.error || '连接服务器失败', 'error')
+                          return
+                        }
+                      }
+                      if (activePane === 'left') setActiveTab(server.id)
+                      else setRightServerId(server.id)
+                      setServerDrawerOpen(false)
+                    }}
+                    className={`mb-1 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left active:bg-[#edf0ff] ${selected ? 'bg-[#eef0ff]' : 'hover:bg-[#f6f7fa]'}`}
+                  >
+                    <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${selected ? 'bg-[#dfe3ff] text-[#6670f5]' : 'bg-[#f1f3f7] text-[#8792a5]'}`}><Server size={19} strokeWidth={1.8} /></span>
+                    <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-[#273142]">{server.name}</span><span className="block truncate text-xs text-[#8993a4]">{server.host}</span></span>
+                    <span className={`h-2.5 w-2.5 rounded-full ${online ? 'bg-[#59c08b]' : 'bg-[#c7cdd7]'}`} />
+                  </button>
+                )
+              })}
+              {drawerServers.length === 0 && <p className="px-3 py-10 text-center text-sm text-[#8e97a8]">未找到匹配的服务器</p>}
+            </div>
+          </aside>
         </div>
       )}
 
       {/* 工具菜单 */}
       {toolsOpen && (
         <div className="fixed inset-0 z-[2000]">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setToolsOpen(false)} />
-          <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl animate-slide-up">
-            <div className="sticky top-0 bg-white pt-3 pb-2 px-4 flex items-center justify-between border-b border-gray-100">
-              <h3 className="text-sm font-semibold text-gray-800">工具</h3>
-              <button onClick={() => setToolsOpen(false)}><X size={18} className="text-gray-400" /></button>
-            </div>
-            <div className="px-4 py-2 space-y-0.5">
+          <div className="absolute inset-0" onClick={() => setToolsOpen(false)} />
+          <div className="absolute right-4 top-[68px] w-52 rounded-2xl border border-[#e8ebf1] bg-white p-2 shadow-xl">
+            <div className="space-y-0.5">
               {[{ icon: ArrowUp, label: '返回上级目录', action: () => { navigateToParent(activePane); setToolsOpen(false) } },
                 { icon: MoveRight, label: '跳转路径', action: () => { setJumpOpen(true); setToolsOpen(false) } },
                 { icon: Search, label: '全局搜索', action: () => { setSearchDialogOpen(true); setToolsOpen(false) } },
