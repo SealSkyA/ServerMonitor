@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useSearchParams } from 'react-router-dom'
-import { Folder, File as LucideFile, ArrowUp, ArrowLeft, ArrowRight, Search, Upload, FileText, FolderPlus, Trash2, Loader2, Server, Download, X, CheckCircle, XCircle, ArrowUpCircle, ArrowDownCircle, Save, FileCode, Copy, RefreshCw, Menu, MoreVertical, Archive, Bookmark, MoveRight, ListFilter, Eye, EyeOff, ChevronRight, Plus, Minus, Maximize, Check, PenLine, FolderArchive, ImageIcon, Zap, FileEdit, Wrench, ChevronLeft } from 'lucide-react'
+import { Folder, File as LucideFile, ArrowUp, ArrowLeft, ArrowRight, Search, Upload, FileText, FolderPlus, FolderUp, Trash2, Loader2, Server, Download, X, CheckCircle, XCircle, ArrowUpCircle, ArrowDownCircle, Save, FileCode, Copy, RefreshCw, Menu, MoreVertical, Archive, Bookmark, MoveRight, ListFilter, Eye, EyeOff, ChevronRight, Plus, Minus, Maximize, Check, PenLine, FolderArchive, ImageIcon, Zap, FileEdit, Wrench, ChevronLeft } from 'lucide-react'
 import { useToast } from '../components/ui/Toast'
 import { useServers } from '../store/ServerContext'
 import { transferManager } from '../services/transferManager'
@@ -693,10 +693,11 @@ export default function FilesPage() {
     showToast(`已添加下载任务: ${file.name}`, 'info')
   }, [servers, showToast, getPaneInfo])
 
-  function handleUploadClick(pane: 'left' | 'right') {
+  function handleUploadClick(pane: 'left' | 'right', directory = false) {
     const input = document.createElement('input')
     input.type = 'file'
     input.multiple = true
+    if (directory) input.setAttribute('webkitdirectory', '')
     input.onchange = async (e) => {
       const files = (e.target as HTMLInputElement).files
       if (!files?.length) return
@@ -714,7 +715,10 @@ export default function FilesPage() {
             reader.onload = () => resolve((reader.result as string).split(',')[1])
             reader.readAsDataURL(f)
           })
-          const destPath = state.currentPath === '/' ? '/' + f.name : state.currentPath + '/' + f.name
+          const relativePath = directory ? f.webkitRelativePath || f.name : f.name
+          const destPath = state.currentPath === '/' ? '/' + relativePath : state.currentPath + '/' + relativePath
+          const parentPath = destPath.slice(0, destPath.lastIndexOf('/'))
+          if (parentPath) await execCommand(serverId, `mkdir -p ${JSON.stringify(parentPath)}`)
           await execCommand(serverId, `echo ${JSON.stringify(content)} | base64 -d > ${JSON.stringify(destPath)}`)
           setter(prev => prev ? { ...prev, success: (prev.success || 0) + 1 } : null)
         } catch (err: any) {
@@ -1071,7 +1075,7 @@ export default function FilesPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-white text-[#1f2632]">
-      <header className="flex h-[calc(76px+env(safe-area-inset-top))] shrink-0 items-center gap-3 bg-[#e9eef6] px-5 pt-safe">
+      <header className="flex h-[calc(64px+env(safe-area-inset-top))] shrink-0 items-center gap-3 bg-[#e9eef6] px-4 pt-safe">
         <button
           type="button"
           aria-label="打开服务器列表"
@@ -1118,11 +1122,11 @@ export default function FilesPage() {
           onClick={() => setActivePane('left')}
           className={`relative flex min-w-0 flex-1 flex-col ${activePane === 'left' ? '' : 'bg-[#fcfcfd]'}`}
         >
-          <div className="flex h-[68px] shrink-0 items-center gap-2 px-3">
-            <button onClick={() => { setNewFileType('file'); setNewFileName(''); setNewFileDialogOpen(true) }} className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#eef0f5] bg-[#f7f6fb] text-[#bfc6d8] shadow-sm"><FileText size={19} strokeWidth={1.7} /></button>
-            <button onClick={() => { setNewFileType('folder'); setNewFileName(''); setNewFileDialogOpen(true) }} className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#edf1f3] bg-[#f4fbfd] text-[#a6dce8] shadow-sm"><FolderPlus size={19} strokeWidth={1.7} /></button>
-            <button onClick={() => handleUploadClick('left')} className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#edf1f7] bg-[#f5f9ff] text-[#9ab8f3] shadow-sm"><Upload size={19} strokeWidth={1.7} /></button>
-            <button onClick={() => setShowQuickActions(true)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#f0eef8] bg-[#f8f5ff] text-[#c7b6f4] shadow-sm"><FolderArchive size={19} strokeWidth={1.7} /></button>
+          <div className="flex h-[58px] shrink-0 items-center gap-1.5 px-3">
+            <button onClick={() => { setNewFileType('file'); setNewFileName(''); setNewFileDialogOpen(true) }} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#eef0f5] bg-[#f7f6fb] text-[#bfc6d8] shadow-sm"><FileText size={16} strokeWidth={1.7} /></button>
+            <button onClick={() => { setNewFileType('folder'); setNewFileName(''); setNewFileDialogOpen(true) }} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#edf1f3] bg-[#f4fbfd] text-[#a6dce8] shadow-sm"><FolderPlus size={16} strokeWidth={1.7} /></button>
+            <button onClick={() => handleUploadClick('left')} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#edf1f7] bg-[#f5f9ff] text-[#9ab8f3] shadow-sm"><Upload size={16} strokeWidth={1.7} /></button>
+            <button onClick={() => handleUploadClick('left', true)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#f0eef8] bg-[#f8f5ff] text-[#c7b6f4] shadow-sm"><FolderUp size={16} strokeWidth={1.7} /></button>
           </div>
 
           <div className="flex-1 overflow-y-auto px-2 pb-3 pt-1">
@@ -1192,11 +1196,11 @@ export default function FilesPage() {
           onClick={() => setActivePane('right')}
           className={`relative flex min-w-0 flex-1 flex-col ${activePane === 'right' ? '' : 'bg-[#fcfcfd]'}`}
         >
-          <div className="flex h-[68px] shrink-0 items-center gap-2 px-3">
-            <button onClick={() => { setNewFileType('file'); setNewFileName(''); setNewFileDialogOpen(true) }} className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#eef0f5] bg-[#f7f6fb] text-[#bfc6d8] shadow-sm"><FileText size={19} strokeWidth={1.7} /></button>
-            <button onClick={() => { setNewFileType('folder'); setNewFileName(''); setNewFileDialogOpen(true) }} className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#edf1f3] bg-[#f4fbfd] text-[#a6dce8] shadow-sm"><FolderPlus size={19} strokeWidth={1.7} /></button>
-            <button onClick={() => handleUploadClick('right')} className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#edf1f7] bg-[#f5f9ff] text-[#9ab8f3] shadow-sm"><Upload size={19} strokeWidth={1.7} /></button>
-            <button onClick={() => { setActivePane('right'); setServerSearch(''); setServerDrawerOpen(true) }} className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#f0eef8] bg-[#f8f5ff] text-[#c7b6f4] shadow-sm"><FolderArchive size={19} strokeWidth={1.7} /></button>
+          <div className="flex h-[58px] shrink-0 items-center gap-1.5 px-3">
+            <button onClick={() => { setNewFileType('file'); setNewFileName(''); setNewFileDialogOpen(true) }} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#eef0f5] bg-[#f7f6fb] text-[#bfc6d8] shadow-sm"><FileText size={16} strokeWidth={1.7} /></button>
+            <button onClick={() => { setNewFileType('folder'); setNewFileName(''); setNewFileDialogOpen(true) }} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#edf1f3] bg-[#f4fbfd] text-[#a6dce8] shadow-sm"><FolderPlus size={16} strokeWidth={1.7} /></button>
+            <button onClick={() => handleUploadClick('right')} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#edf1f7] bg-[#f5f9ff] text-[#9ab8f3] shadow-sm"><Upload size={16} strokeWidth={1.7} /></button>
+            <button onClick={() => handleUploadClick('right', true)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#f0eef8] bg-[#f8f5ff] text-[#c7b6f4] shadow-sm"><FolderUp size={16} strokeWidth={1.7} /></button>
           </div>
 
           <div className="flex-1 overflow-y-auto px-2 pb-3 pt-1">
@@ -1297,7 +1301,7 @@ export default function FilesPage() {
         <div className="fixed inset-0 z-[2000]">
           <div className="absolute inset-0 bg-[#1f2632]/25" onClick={() => setServerDrawerOpen(false)} />
           <aside className="absolute inset-y-0 left-0 flex w-[84vw] max-w-[360px] flex-col bg-white shadow-2xl animate-slide-right">
-            <div className="flex h-[76px] shrink-0 items-center gap-2 bg-[#e9eef6] px-4">
+            <div className="flex h-[calc(64px+env(safe-area-inset-top))] shrink-0 items-center gap-2 bg-[#e9eef6] px-4 pt-safe">
               <button aria-label="关闭服务器抽屉" onClick={() => setServerDrawerOpen(false)} className="flex h-10 w-10 items-center justify-center rounded-xl text-[#2b3442] active:bg-[#dce3ef]"><ChevronLeft size={26} /></button>
               <div className="min-w-0 flex-1">
                 <h2 className="text-lg font-bold text-[#1f2632]">选择服务器</h2>
@@ -1326,8 +1330,15 @@ export default function FilesPage() {
                           return
                         }
                       }
-                      if (activePane === 'left') setActiveTab(server.id)
-                      else setRightServerId(server.id)
+                      if (activePane === 'left') {
+                        setTabState(emptyTabState())
+                        setActiveTab(server.id)
+                        loadFiles(server.id, '/', setTabState)
+                      } else {
+                        setRightState(emptyTabState())
+                        setRightServerId(server.id)
+                        loadFiles(server.id, '/', setRightState)
+                      }
                       setServerDrawerOpen(false)
                     }}
                     className={`mb-1 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left active:bg-[#edf0ff] ${selected ? 'bg-[#eef0ff]' : 'hover:bg-[#f6f7fa]'}`}
